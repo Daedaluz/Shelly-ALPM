@@ -87,6 +87,24 @@ pub const appimage = struct {
     pub const DownloadProgressHandler = events.DownloadProgressHandler;
 };
 
+/// Optional firmware updates through the fwupd `fwupdmgr` client.
+pub const firmware = struct {
+    pub const fwupd = @import("firmware/fwupd.zig");
+
+    pub const Client = fwupd.Client;
+    pub const SystemRunner = fwupd.SystemRunner;
+    pub const Runner = fwupd.Runner;
+    pub const Mode = fwupd.Mode;
+    pub const Output = fwupd.Output;
+    pub const Update = fwupd.Update;
+    pub const UpdateList = fwupd.UpdateList;
+    pub const PendingRestart = fwupd.PendingRestart;
+    pub const RefreshOutcome = fwupd.RefreshOutcome;
+    pub const Error = fwupd.Error;
+    pub const default_executable_candidates = fwupd.default_executable_candidates;
+    pub const findExecutable = fwupd.findExecutable;
+};
+
 pub const pkgbuild = struct {
     pub const parser = @import("pkgbuild/pkgbuild_parser.zig");
     pub const validation = @import("pkgbuild/shared_validtor.zig");
@@ -485,6 +503,7 @@ test {
     _ = @import("shared/source_pgp_keyring.zig");
     _ = @import("shared/package_signer.zig");
     _ = @import("appimage/update_manager.zig");
+    _ = @import("firmware/fwupd.zig");
     _ = @import("pkgbuild/pkgbuild_parser.zig");
     _ = @import("pkgbuild/post_install_validator.zig");
     _ = @import("pkgbuild/install_script.zig");
