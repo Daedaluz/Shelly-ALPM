@@ -1,6 +1,7 @@
 const native_backend = @import("../config/native_backend.zig");
 const config = @import("config.zig");
 const downgrade = @import("downgrade.zig");
+const firmware = @import("firmware.zig");
 const backup = @import("backup.zig");
 const builder = @import("builder.zig");
 const install = @import("install.zig");
@@ -31,6 +32,7 @@ pub fn dispatch(
     if (try config.dispatch(context, invocation)) |exit_code| return exit_code;
     try native_backend.apply(context);
     if (try search_install.dispatch(context, invocation)) |exit_code| return exit_code;
+    if (try firmware.dispatch(context, invocation)) |exit_code| return exit_code;
     if (try upgrade.dispatch(context, invocation)) |exit_code| return exit_code;
     if (try sync.dispatch(context, invocation)) |exit_code| return exit_code;
     if (try update.dispatch(context, invocation)) |exit_code| return exit_code;

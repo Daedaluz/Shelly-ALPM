@@ -48,6 +48,18 @@ tests.
 - [ ] Verify `shelly upgrade flatpak` and `shelly list-updates flatpak` still check Flatpak explicitly.
 - [ ] Restore `false` and verify combined upgrades include Flatpak again when the backend is installed; `--no-flatpak` still skips it for one run.
 
+## Firmware updates through fwupd
+
+- [ ] Without `fwupd` installed, `shelly list-updates firmware` and `shelly upgrade firmware` exit 1 with a message that names the fwupd package; no other command changes behavior.
+- [ ] With `fwupd` installed, `shelly -Pw` lists the same devices as `fwupdmgr get-updates`, or reports that all firmware is up to date.
+- [ ] `shelly list-updates firmware --refresh` while offline warns about the failed refresh and still lists cached results.
+- [ ] `shelly list-updates firmware --json | jq .` parses; errors appear on stderr only.
+- [ ] `shelly upgrade firmware` pressing Enter at the prompt cancels without flashing anything (default is no).
+- [ ] On a machine with a pending update (or the fwupd test remote, `fwupdmgr enable-remote fwupd-tests`), answering `y` shows fwupdmgr progress, installs only the listed devices, and never reboots by itself.
+- [ ] After a UEFI capsule update, Shelly tells you to restart; the update finishes after a reboot.
+- [ ] `shelly upgrade all` and `shelly list-updates all` never mention firmware.
+- [ ] `shelly upgrade firmware --ui-mode` refuses to flash.
+
 ## UI Testing (Shelly-UI)
 
 ### Installation & Startup

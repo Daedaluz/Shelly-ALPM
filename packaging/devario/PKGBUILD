@@ -176,6 +176,7 @@ package_shelly() {
   )
   optdepends=(
     'fuse2: run AppImages that require FUSE 2'
+    'fwupd: firmware updates with shelly list-updates firmware and upgrade firmware'
     'libstarfish: dependency viewer for arch packages'
   )
   conflicts=('shelly-git' 'shelly-bin')
@@ -213,6 +214,7 @@ package_shelly-cli() {
     'devario-devel: build AUR packages and run native isolated builds'
     'desktop-file-utils: update AppImage desktop entries'
     'fuse2: run AppImages that require FUSE 2'
+    'fwupd: firmware updates with shelly list-updates firmware and upgrade firmware'
     'gtk-update-icon-cache: update AppImage icons'
     'opendoas: alternative privilege elevator to sudo'
     'plocate: locate-based pacfile discovery'

@@ -59,9 +59,9 @@ pub const Action = enum {
         return switch (self) {
             .search => "Search ALPM repositories, the AUR, or cached Flatpak AppStream catalogs.",
             .install => "Install packages or applications from ALPM repositories, the AUR, AppImages, Flatpak remotes, or local Flatpak files, and repair installed Flatpaks.",
-            .upgrade => "Upgrade standard, AUR, AppImage, or Flatpak packages, including all supported backends together.",
+            .upgrade => "Upgrade standard, AUR, AppImage, or Flatpak packages, including all supported backends together, or device firmware through fwupd.",
             .list => "List installed standard packages, AppImages, AUR packages, or Flatpak applications.",
-            .list_updates => "List available updates for standard, AUR, AppImage, or Flatpak packages.",
+            .list_updates => "List available updates for standard, AUR, AppImage, or Flatpak packages, or device firmware through fwupd.",
             .purify => "Remove corrupted or orphaned ALPM packages, optionally clean the package cache, or remove unused Flatpak dependencies.",
             .remove => "Remove standard or local packages, AUR packages, AppImages, or Flatpak applications.",
             .sync => "Synchronize ALPM package databases, AppImage metadata, or cached Flatpak AppStream metadata.",

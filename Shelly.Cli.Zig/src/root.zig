@@ -25,6 +25,7 @@ pub const search_install_command = @import("commands/search_install.zig");
 pub const upgrade_command = @import("commands/upgrade.zig");
 pub const list_command = @import("commands/list.zig");
 pub const list_updates_command = @import("commands/list_updates.zig");
+pub const firmware_command = @import("commands/firmware.zig");
 pub const mark_command = @import("commands/mark.zig");
 pub const news_command = @import("commands/news.zig");
 pub const purify_command = @import("commands/purify.zig");
@@ -70,6 +71,7 @@ test {
     _ = upgrade_command;
     _ = list_command;
     _ = list_updates_command;
+    _ = firmware_command;
     _ = mark_command;
     _ = news_command;
     _ = purify_command;

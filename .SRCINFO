@@ -56,6 +56,7 @@ pkgname = shelly
 	optdepends = shelly-flatpak-backend: Flatpak package management support
 	optdepends = util-linux: isolate fresh-root provisioning for --isolated builds
 	optdepends = fuse2: run AppImages that require FUSE 2
+	optdepends = fwupd: firmware updates with shelly list-updates firmware and upgrade firmware
 	provides = shelly
 	conflicts = shelly-git
 	conflicts = shelly-bin

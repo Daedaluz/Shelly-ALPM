@@ -41,4 +41,12 @@ pub const variants = [_]types.Variant{
         .description = "List Flatpak applications and runtimes with available updates.",
         .implementation = "PackageManager.FlatpakManager.get_updates_flatpak",
     },
+    .{
+        .action = .list_updates,
+        .name = "firmware",
+        .type_code = 'w',
+        .description = "List devices with firmware updates available through fwupd, when fwupd is installed. Not included in `list-updates all`.",
+        .implementation = "PackageManager.firmware.Client.getUpdates (fwupdmgr get-updates --json)",
+        .options = &.{flag("--refresh", &.{}, "Download current firmware metadata before checking")},
+    },
 };

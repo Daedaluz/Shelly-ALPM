@@ -110,6 +110,7 @@ package_shelly-cli() {
     'devtools: build AUR packages in a clean chroot'
     'desktop-file-utils: update AppImage desktop entries'
     'fuse2: run AppImages that require FUSE 2'
+    'fwupd: firmware updates with shelly list-updates firmware and upgrade firmware'
     'shelly-cli-flatpak-backend: Flatpak package management support'
     'gtk-update-icon-cache: update AppImage icons'
     'opendoas: alternative privilege elevator to sudo'

@@ -184,6 +184,24 @@ This preference can be used together with `DisableAppImageUpdateCheck`.
 
 Flatpak removal accepts mutually exclusive `--user` and `--system` flags; omitting both keeps automatic installation lookup.
 
+## Firmware updates (fwupd)
+
+When [fwupd](https://fwupd.org) is installed, Shelly can list and install device firmware updates from the LVFS:
+
+```
+shelly list-updates firmware        # or: shelly -Pw
+shelly list-updates firmware --refresh
+shelly upgrade firmware             # or: shelly -Uw
+```
+
+fwupd is an optional dependency (`sudo pacman -S fwupd`). Without it, the firmware commands explain how to enable them and every other command behaves as before. Shelly runs `fwupdmgr` from `/usr/bin` or `/usr/local/bin` only, never through `$PATH`.
+
+`shelly upgrade firmware` refreshes fwupd metadata, shows each device with its current and new version, and asks for confirmation. The prompt defaults to **no**. If metadata cannot be refreshed, for example while offline, Shelly warns and continues with cached metadata; pass `--no-refresh` to skip the download. Only the devices shown in the plan are updated. Keep the computer on AC power while firmware installs. Shelly never restarts the computer itself. When fwupd reports that a device needs a reboot or a shutdown to finish, Shelly says so after the upgrade.
+
+`shelly list-updates firmware --json` prints an array with `DeviceId`, `Name`, `Vendor`, `Plugin`, `CurrentVersion`, `NewVersion`, `Summary`, `DownloadSize`, and `Urgency` for each device; errors go to stderr.
+
+Firmware is deliberately excluded from `shelly upgrade all` and `shelly list-updates all`, and firmware upgrades are not yet available in the Shelly UI.
+
 ## Upgrade cache cleaning
 
 To skip the package-cache cleanup prompt and deletion during `shelly upgrade all`:

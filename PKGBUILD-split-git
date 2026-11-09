@@ -172,6 +172,7 @@ package_shelly-git() {
   )
   optdepends=(
     'fuse2: run AppImages that require FUSE 2'
+    'fwupd: firmware updates with shelly list-updates firmware and upgrade firmware'
     'libstarfish: dependency viewer for arch packages'
   )
   provides=("shelly=${pkgver}")
@@ -211,6 +212,7 @@ package_shelly-cli-git() {
     'desktop-file-utils: update AppImage desktop entries'
     'devtools: build AUR packages in a clean chroot'
     'fuse2: run AppImages that require FUSE 2'
+    'fwupd: firmware updates with shelly list-updates firmware and upgrade firmware'
     'gtk-update-icon-cache: update AppImage icons'
     'opendoas: alternative privilege elevator to sudo'
     'plocate: locate-based pacfile discovery'

@@ -53,4 +53,12 @@ pub const variants = [_]types.Variant{
         .description = "Upgrade every application and runtime with an available update in the system and user Flatpak installations.",
         .implementation = "PackageManager.FlatpakManager.upgrade_flatpaks",
     },
+    .{
+        .action = .upgrade,
+        .name = "firmware",
+        .type_code = 'w',
+        .description = "Refresh fwupd metadata, show the devices with firmware updates, and install them after confirmation. Requires fwupd. Never part of `upgrade all`; a reboot or shutdown may be needed afterwards.",
+        .implementation = "PackageManager.firmware.Client.refresh / getUpdates / update / pendingRestart",
+        .options = &.{flag("--no-refresh", &.{}, "Use cached firmware metadata instead of downloading it first")},
+    },
 };

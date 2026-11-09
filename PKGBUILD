@@ -131,6 +131,7 @@ package_shelly() {
       'shelly-flatpak-backend: Flatpak package management support'
       'util-linux: isolate fresh-root provisioning for --isolated builds'
       'fuse2: run AppImages that require FUSE 2'
+      'fwupd: firmware updates with shelly list-updates firmware and upgrade firmware'
   )
 
   cd "$srcdir/${_source_dir}"
