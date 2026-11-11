@@ -28,6 +28,7 @@ const installedDatabaseDir = @import("services/db-watcher.zig").installedDatabas
 const ShellyConfig = @import("services/config.zig").ConfigResolver;
 const next_notification = @import("services/next_notification.zig");
 const ShellyCli = @import("services/shelly-cli.zig").ShellyCli;
+const ReplaceSlot = @import("services/replace_slot.zig").ReplaceSlot;
 
 const translations = @import("services/translations.zig");
 const trans = translations._;
@@ -55,7 +56,17 @@ var updates_buf: [256:0]u8 = undefined;
 var launch_requested = std.atomic.Value(bool).init(false);
 var quit_requested = std.atomic.Value(bool).init(false);
 
-const NotifText = struct { summary: [:0]u8, body: [:0]u8 };
+const NotifText = struct {
+    summary: [:0]u8,
+    body: [:0]u8,
+    /// Update the previous notification of this kind in place instead of
+    /// adding another one. Notifications without this flag stand alone.
+    replace_previous: bool = false,
+};
+
+/// Last "updates available" notification. Kept outside `runSession` so a
+/// D-Bus reconnect still updates the notification already on screen.
+var updates_notification: ReplaceSlot = .{};
 
 const IconsToUse = struct {
     icon_name: []const u8,
@@ -139,7 +150,7 @@ const Updates = struct {
         self.needs_config_change = true;
     }
 
-    fn queueNotif(self: *Updates, summary: []const u8, body: []const u8) void {
+    fn queueNotif(self: *Updates, summary: []const u8, body: []const u8, replace_previous: bool) void {
         const s = self.allocator.dupeSentinel(u8, summary, 0) catch return;
         const b = self.allocator.dupeSentinel(u8, body, 0) catch {
             self.allocator.free(s);
@@ -151,7 +162,7 @@ const Updates = struct {
             self.allocator.free(old.summary);
             self.allocator.free(old.body);
         }
-        self.pending_notif = .{ .summary = s, .body = b };
+        self.pending_notif = .{ .summary = s, .body = b, .replace_previous = replace_previous };
     }
 
     fn takeRefresh(self: *Updates) bool {
@@ -310,7 +321,9 @@ const Worker = struct {
         if (count > 0) {
             var buf: [128]u8 = undefined;
             const body = std.fmt.bufPrintSentinel(&buf, "{d} {s}", .{ count, trans("updates available") }, 0) catch "0 updates";
-            self.updates.queueNotif(trans("Updates available"), body);
+            // Each check updates the same notification rather than stacking
+            // "N updates available" entries.
+            self.updates.queueNotif(trans("Updates available"), body, true);
         }
     }
 };
@@ -527,14 +540,17 @@ fn runSession(init: std.process.Init) !void {
             defer updates.freeNotif(n);
 
             log_loop.info("notify: {s} {s}", .{ n.summary, n.body });
-            _ = notifier.notify(.{
+            if (notifier.notify(.{
                 .app_name = "Shelly",
                 .icon = "shelly",
                 .summary = n.summary,
                 .body = n.body,
+                .replaces_id = updates_notification.replacesId(n.replace_previous),
                 .on_activate = &openShelly,
                 .ctx = &runner,
-            }) catch |e| log_loop.err("Could not display the update notification. {0s}\n\nTechnical details: {1s}", .{ diagnostics.cause(e), @errorName(e) });
+            })) |id| {
+                updates_notification.remember(n.replace_previous, id);
+            } else |e| log_loop.err("Could not display the update notification. {0s}\n\nTechnical details: {1s}", .{ diagnostics.cause(e), @errorName(e) });
         }
 
         if (updates.takeConfigChange()) {
@@ -801,4 +817,5 @@ test "ensureSessionBusAddress rejects unusable XDG_RUNTIME_DIR" {
 test {
     std.testing.refAllDecls(@This());
     _ = @import("services/next_notification.zig");
+    _ = @import("services/replace_slot.zig");
 }
