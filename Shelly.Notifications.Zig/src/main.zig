@@ -560,6 +560,7 @@ fn runSession(init: std.process.Init) !void {
                 .summary = n.summary,
                 .body = n.body,
                 .replaces_id = updates_notification.replacesId(n.replace_previous),
+                .desktop_entry = "com.shellyorg.shelly",
                 .on_activate = &openShelly,
                 .ctx = &runner,
             })) |id| {
