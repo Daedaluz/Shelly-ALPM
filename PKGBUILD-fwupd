@@ -3,7 +3,7 @@
 # Replaces the shelly / shelly-flatpak-backend packages; reinstall shelly from the repos to go back.
 pkgbase=shelly-fwupd
 pkgname=('shelly-fwupd' 'shelly-flatpak-backend-fwupd')
-pkgver='3.2.0r5129.ga1518d9'
+pkgver='3.2.1r5277.ga1648fd'
 pkgrel=1
 arch=('x86_64' 'aarch64')
 url="https://github.com/Daedaluz/Shelly-ALPM"
@@ -34,7 +34,7 @@ sha256sums=('SKIP'
 pkgver() {
   cd "${srcdir}/${pkgname}"
 
-  printf '3.2.0r%s.g%s' \
+  printf '3.2.1r%s.g%s' \
     "$(git rev-list --count HEAD)" \
     "$(git rev-parse --short=7 HEAD)"
 }
