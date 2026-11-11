@@ -58,7 +58,10 @@ tests.
 - [ ] On a machine with a pending update (or the fwupd test remote, `fwupdmgr enable-remote fwupd-tests`), answering `y` shows fwupdmgr progress, installs only the listed devices, and never reboots by itself.
 - [ ] After a UEFI capsule update, Shelly tells you to restart; the update finishes after a reboot.
 - [ ] `shelly upgrade all` and `shelly list-updates all` never mention firmware.
-- [ ] `shelly upgrade firmware --ui-mode` refuses to flash.
+- [ ] `shelly upgrade firmware --ui-mode` without `--no-confirm` refuses to flash.
+- [ ] In the UI, turning on Settings → Enable Firmware Updates (fwupd) offers to install fwupd when it is missing.
+- [ ] With it on, Updates shows a Firmware section only when fwupd reports updates; Upgrade never includes firmware.
+- [ ] Update Firmware → Cancel does nothing; Update Firmware → confirm installs the listed devices and the section disappears afterwards.
 
 ## UI Testing (Shelly-UI)
 

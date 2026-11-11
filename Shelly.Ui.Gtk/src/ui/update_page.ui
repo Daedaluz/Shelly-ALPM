@@ -203,5 +203,80 @@
         </child>
       </object>
     </child>
+    <child>
+      <object class="GtkBox" id="firmware_section">
+        <property name="orientation">vertical</property>
+        <property name="spacing">8</property>
+        <property name="visible">false</property>
+        <child>
+          <object class="GtkBox">
+            <property name="spacing">12</property>
+            <child>
+              <object class="GtkBox">
+                <property name="orientation">vertical</property>
+                <property name="hexpand">true</property>
+                <child>
+                  <object class="GtkLabel" id="firmware_title">
+                    <property name="label" translatable="yes">Firmware</property>
+                    <property name="xalign">0</property>
+                    <property name="accessible-role">heading</property>
+                    <accessibility>
+                      <property name="level">3</property>
+                    </accessibility>
+                    <style>
+                      <class name="title-4"/>
+                    </style>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkLabel">
+                    <property name="label" translatable="yes">Installed through fwupd. Updated separately from packages.</property>
+                    <property name="xalign">0</property>
+                    <property name="wrap">true</property>
+                    <style>
+                      <class name="dim-label"/>
+                    </style>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="GtkButton" id="firmware_button">
+                <property name="valign">center</property>
+                <property name="tooltip-text" translatable="yes">Install the firmware updates listed below</property>
+                <signal name="clicked" handler="update_firmware" swapped="true"/>
+                <child>
+                  <object class="GtkBox">
+                    <property name="spacing">6</property>
+                    <child>
+                      <object class="GtkImage">
+                        <property name="accessible-role">presentation</property>
+                        <property name="icon-name">software-update-available-symbolic</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkLabel">
+                        <property name="label" translatable="yes">Update Firmware</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkListBox" id="firmware_list">
+            <property name="selection-mode">none</property>
+            <accessibility>
+              <property name="label" translatable="yes">Firmware updates</property>
+            </accessibility>
+            <style>
+              <class name="boxed-list"/>
+            </style>
+          </object>
+        </child>
+      </object>
+    </child>
   </template>
 </interface>

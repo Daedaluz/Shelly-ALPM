@@ -5,15 +5,18 @@ const ShellyCli = @import("shelly_cli.zig").ShellyCli;
 pub const Feature = enum {
     flatpak,
     appimage,
+    firmware,
 };
 
 const flatpak_dependencies = [_][]const u8{"flatpak"};
 const appimage_dependencies = [_][]const u8{"fuse2"};
+const firmware_dependencies = [_][]const u8{"fwupd"};
 
 pub fn dependenciesForFeature(feature: Feature) []const []const u8 {
     return switch (feature) {
         .flatpak => &flatpak_dependencies,
         .appimage => &appimage_dependencies,
+        .firmware => &firmware_dependencies,
     };
 }
 

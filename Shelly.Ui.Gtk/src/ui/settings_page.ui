@@ -159,6 +159,27 @@
                                 <property name="spacing">12</property>
                                 <child>
                                   <object class="GtkLabel">
+                                    <property name="label" translatable="yes">Enable Firmware Updates (fwupd)</property>
+                                    <property name="halign">start</property>
+                                    <property name="hexpand">true</property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkSwitch" id="firmware_switch">
+                                    <property name="halign">end</property>
+                                    <accessibility>
+                                      <property name="label" translatable="yes">Enable Firmware Updates (fwupd)</property>
+                                    </accessibility>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkBox">
+                                <property name="orientation">horizontal</property>
+                                <property name="spacing">12</property>
+                                <child>
+                                  <object class="GtkLabel">
                                     <property name="label" translatable="yes">Enable Tray Icon</property>
                                     <property name="halign">start</property>
                                     <property name="hexpand">true</property>

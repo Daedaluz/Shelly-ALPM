@@ -11,6 +11,8 @@ const size_helper = @import("../helpers/size_converts.zig").SizeConverter;
 const ShellyCli = @import("../services/shelly_cli.zig").ShellyCli;
 const ShellyCommands = @import("../services/shelly_operation.zig").ShellyCommands;
 const CheckUpdates = @import("../models/sync.zig").CheckUpdates;
+const FirmwareUpdate = @import("../models/sync.zig").FirmwareUpdate;
+const ConfirmDialog = @import("../dialog/page/yn_dialog.zig").ConfirmDialog;
 const UpdateObject = @import("../g_objects/update_object.zig").UpdateObject;
 const UpdateSource = @import("../g_objects/update_object.zig").UpdateSource;
 const ShellyWindow = @import("../shelly_window.zig").ShellyWindow;
@@ -46,6 +48,14 @@ pub const UpdatePage = extern struct {
         filter_model: *gtk.FilterListModel,
         selection: *gtk.NoSelection,
         upgrade_button: *gtk.Button,
+        firmware_section: *gtk.Box,
+        firmware_title: *gtk.Label,
+        firmware_list: *gtk.ListBox,
+        firmware_button: *gtk.Button,
+        /// Owns `firmware_updates` and the row label strings.
+        firmware_arena: ?*std.heap.ArenaAllocator,
+        firmware_updates: []const FirmwareUpdate,
+        firmware_generation: u64,
         arena: ?*std.heap.ArenaAllocator,
         generation: u64,
         loaded: bool,
@@ -98,6 +108,9 @@ pub const UpdatePage = extern struct {
         p.loaded = false;
         p.arena = null;
         p.generation = 0;
+        p.firmware_arena = null;
+        p.firmware_updates = &.{};
+        p.firmware_generation = 0;
 
         p.list_store = gio.ListStore.new(UpdateObject.getGObjectType());
         p.filter = gtk.CustomFilter.new(&filter_update, self, null);
@@ -185,6 +198,7 @@ pub const UpdatePage = extern struct {
 
     fn clear_data(self: *Self) void {
         const p = self.priv();
+        clear_firmware(self);
         gio.ListStore.removeAll(p.list_store);
         if (p.arena) |arena| {
             arena.deinit();
@@ -204,6 +218,7 @@ pub const UpdatePage = extern struct {
             return;
         };
         thread.detach();
+        start_firmware_load(self);
     }
 
     fn load_worker(page: *Self, generation: u64) void {
@@ -597,9 +612,173 @@ pub const UpdatePage = extern struct {
 
         const thread = std.Thread.spawn(.{}, load_worker, .{ self, p.generation }) catch return;
         thread.detach();
+        clear_firmware(self);
+        start_firmware_load(self);
     }
 
-    const template_children = .{ .{ "content_list", @offsetOf(Private, "content_list") }, .{ "selected_label", @offsetOf(Private, "selected_label") }, .{ "refresh_button", @offsetOf(Private, "refresh_button") }, .{ "native_toggle", @offsetOf(Private, "native_toggle") }, .{ "aur_toggle", @offsetOf(Private, "aur_toggle") }, .{ "flatpak_toggle", @offsetOf(Private, "flatpak_toggle") }, .{ "updates_stack", @offsetOf(Private, "updates_stack") }, .{ "loading_page", @offsetOf(Private, "loading_page") }, .{ "list_page", @offsetOf(Private, "list_page") }, .{ "empty_page", @offsetOf(Private, "empty_page") }, .{ "error_page", @offsetOf(Private, "error_page") }, .{ "loading_spinner", @offsetOf(Private, "loading_spinner") }, .{ "error_label", @offsetOf(Private, "error_label") }, .{ "upgrade_button", @offsetOf(Private, "upgrade_button") } };
+    // -----------------------------------------------------------------------
+    // Firmware (fwupd)
+    // -----------------------------------------------------------------------
+
+    fn firmwareEnabled() bool {
+        const svc = runtime.config orelse return false;
+        const cfg = svc.get() catch return false;
+        return cfg.FirmwareEnabled;
+    }
+
+    const FirmwareResult = struct {
+        page: *Self,
+        generation: u64,
+        arena: *std.heap.ArenaAllocator,
+        updates: []const FirmwareUpdate,
+    };
+
+    fn clear_firmware(self: *Self) void {
+        const p = self.priv();
+        // Results still in flight belong to an older view; drop them.
+        p.firmware_generation += 1;
+        gtk.Widget.setVisible(p.firmware_section.as(gtk.Widget), 0);
+        gtk.ListBox.removeAll(p.firmware_list);
+        p.firmware_updates = &.{};
+        if (p.firmware_arena) |arena| {
+            arena.deinit();
+            std.heap.c_allocator.destroy(arena);
+            p.firmware_arena = null;
+        }
+    }
+
+    fn start_firmware_load(self: *Self) void {
+        if (!firmwareEnabled()) return;
+        const p = self.priv();
+        const thread = std.Thread.spawn(.{}, firmware_worker, .{ self, p.firmware_generation }) catch return;
+        thread.detach();
+    }
+
+    fn firmware_worker(page: *Self, generation: u64) void {
+        const arena = std.heap.c_allocator.create(std.heap.ArenaAllocator) catch return;
+        arena.* = std.heap.ArenaAllocator.init(std.heap.c_allocator);
+        const alloc = arena.allocator();
+        var threaded: std.Io.Threaded = .init(alloc, .{});
+        defer threaded.deinit();
+
+        const cli = ShellyCli{ .allocator = alloc, .io = threaded.io() };
+        // A missing or broken fwupd simply means there is nothing to show;
+        // `shelly list-updates firmware` reports the reason in a terminal.
+        const updates: []const FirmwareUpdate = if (cli.check_firmware_updates()) |parsed| parsed.value else |_| &.{};
+
+        const result = std.heap.c_allocator.create(FirmwareResult) catch {
+            arena.deinit();
+            std.heap.c_allocator.destroy(arena);
+            return;
+        };
+        result.* = .{ .page = page, .generation = generation, .arena = arena, .updates = updates };
+        _ = glib.idleAdd(&on_firmware_loaded, result);
+    }
+
+    fn on_firmware_loaded(data: ?*anyopaque) callconv(.c) c_int {
+        const result: *FirmwareResult = @ptrCast(@alignCast(data.?));
+        defer std.heap.c_allocator.destroy(result);
+        const page = result.page;
+        const p = page.priv();
+
+        if (result.generation != p.firmware_generation or result.updates.len == 0) {
+            result.arena.deinit();
+            std.heap.c_allocator.destroy(result.arena);
+            return 0;
+        }
+
+        p.firmware_arena = result.arena;
+        p.firmware_updates = result.updates;
+        const alloc = result.arena.allocator();
+
+        for (result.updates) |update| {
+            gtk.ListBox.append(p.firmware_list, firmware_row(alloc, update) catch continue);
+        }
+        const heading = std.fmt.allocPrintSentinel(alloc, "{s} · {d}", .{ translations._("Firmware"), result.updates.len }, 0) catch translations._("Firmware");
+        gtk.Label.setLabel(p.firmware_title, heading);
+        gtk.Widget.setVisible(p.firmware_section.as(gtk.Widget), 1);
+        return 0;
+    }
+
+    fn firmware_row(alloc: std.mem.Allocator, update: FirmwareUpdate) !*gtk.Widget {
+        const row = gtk.Box.new(.horizontal, 12);
+        gtk.Widget.setMarginTop(row.as(gtk.Widget), 8);
+        gtk.Widget.setMarginBottom(row.as(gtk.Widget), 8);
+        gtk.Widget.setMarginStart(row.as(gtk.Widget), 12);
+        gtk.Widget.setMarginEnd(row.as(gtk.Widget), 12);
+
+        const text = gtk.Box.new(.vertical, 2);
+        gtk.Widget.setHexpand(text.as(gtk.Widget), 1);
+        const name = gtk.Label.new(try alloc.dupeSentinel(u8, update.Name, 0));
+        gtk.Label.setXalign(name, 0);
+        gtk.Widget.addCssClass(name.as(gtk.Widget), "heading");
+        gtk.Box.append(text, name.as(gtk.Widget));
+        const detail_text = if (update.Summary.len != 0)
+            try std.fmt.allocPrintSentinel(alloc, "{s} · {s}", .{ update.Vendor, update.Summary }, 0)
+        else
+            try alloc.dupeSentinel(u8, update.Vendor, 0);
+        const detail = gtk.Label.new(detail_text);
+        gtk.Label.setXalign(detail, 0);
+        gtk.Label.setWrap(detail, 1);
+        gtk.Widget.addCssClass(detail.as(gtk.Widget), "dim-label");
+        gtk.Box.append(text, detail.as(gtk.Widget));
+        gtk.Box.append(row, text.as(gtk.Widget));
+
+        const versions_text = if (update.Urgency.len != 0)
+            try std.fmt.allocPrintSentinel(alloc, "{s} → {s} ({s})", .{ update.CurrentVersion, update.NewVersion, update.Urgency }, 0)
+        else
+            try std.fmt.allocPrintSentinel(alloc, "{s} → {s}", .{ update.CurrentVersion, update.NewVersion }, 0);
+        const versions = gtk.Label.new(versions_text);
+        gtk.Widget.setValign(versions.as(gtk.Widget), .center);
+        gtk.Box.append(row, versions.as(gtk.Widget));
+        return row.as(gtk.Widget);
+    }
+
+    fn update_firmware(self: *Self) callconv(.c) void {
+        const p = self.priv();
+        if (p.firmware_updates.len == 0) return;
+
+        var buf: [1024]u8 = undefined;
+        const message = std.fmt.bufPrintSentinel(&buf, "{s}\n\n{s}", .{
+            translations._("Shelly will install firmware for the devices listed under Firmware."),
+            translations._("Keep the computer plugged in and do not power it off while firmware is being installed. Some devices finish installing only after a restart."),
+        }, 0) catch translations._("Install firmware updates?");
+        const dialog = ConfirmDialog.new(translations._("Install firmware updates?"), message, &on_firmware_confirm, self);
+        dialog.setButtons(translations._("Update Firmware"), translations._("Cancel"));
+        if (support.getWindow(ShellyWindow, self)) |win| win.showLockout(dialog.as(gtk.Widget));
+    }
+
+    fn on_firmware_confirm(ctx: ?*anyopaque, confirmed: bool) void {
+        const self: *Self = @ptrCast(@alignCast(ctx.?));
+        const win = support.getWindow(ShellyWindow, self) orelse return;
+        win.hideLockout();
+        if (!confirmed) return;
+
+        const p = self.priv();
+        var names: std.ArrayListUnmanaged([]const u8) = .empty;
+        defer names.deinit(std.heap.c_allocator);
+        for (p.firmware_updates) |update| names.append(std.heap.c_allocator, update.Name) catch return;
+
+        // --no-refresh keeps the install to exactly the devices shown here;
+        // --no-confirm is the user's answer to the dialog above.
+        win.startTransaction(.{
+            .title = translations._("Updating firmware"),
+            .argv = &.{ "upgrade", "firmware", "--no-confirm", "--no-refresh" },
+            .packages = names.items,
+            .on_complete = &on_firmware_complete,
+            .privileged = true,
+            .ctx = self,
+        });
+    }
+
+    fn on_firmware_complete(ctx: *anyopaque, success: bool) void {
+        const self: *Self = @ptrCast(@alignCast(ctx));
+        if (!success) return;
+        clear_firmware(self);
+        start_firmware_load(self);
+    }
+
+    const template_children = .{ .{ "content_list", @offsetOf(Private, "content_list") }, .{ "selected_label", @offsetOf(Private, "selected_label") }, .{ "refresh_button", @offsetOf(Private, "refresh_button") }, .{ "native_toggle", @offsetOf(Private, "native_toggle") }, .{ "aur_toggle", @offsetOf(Private, "aur_toggle") }, .{ "flatpak_toggle", @offsetOf(Private, "flatpak_toggle") }, .{ "updates_stack", @offsetOf(Private, "updates_stack") }, .{ "loading_page", @offsetOf(Private, "loading_page") }, .{ "list_page", @offsetOf(Private, "list_page") }, .{ "empty_page", @offsetOf(Private, "empty_page") }, .{ "error_page", @offsetOf(Private, "error_page") }, .{ "loading_spinner", @offsetOf(Private, "loading_spinner") }, .{ "error_label", @offsetOf(Private, "error_label") }, .{ "upgrade_button", @offsetOf(Private, "upgrade_button") }, .{ "firmware_section", @offsetOf(Private, "firmware_section") }, .{ "firmware_title", @offsetOf(Private, "firmware_title") }, .{ "firmware_list", @offsetOf(Private, "firmware_list") }, .{ "firmware_button", @offsetOf(Private, "firmware_button") } };
 
     pub const Class = extern struct {
         parent_class: Parent.Class,
@@ -614,6 +793,7 @@ pub const UpdatePage = extern struct {
             }
             gtk.Widget.Class.bindTemplateCallbackFull(wc, "refresh_updates", @ptrCast(&refresh_updates));
             gtk.Widget.Class.bindTemplateCallbackFull(wc, "upgrade_button", @ptrCast(&upgrade));
+            gtk.Widget.Class.bindTemplateCallbackFull(wc, "update_firmware", @ptrCast(&update_firmware));
         }
     };
 };

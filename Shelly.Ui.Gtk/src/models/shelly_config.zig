@@ -40,6 +40,8 @@ pub const ShellyConfig = struct {
     AtollAurEnabled: bool = false,
     AppImageEnabled: bool = false,
     FlatPackEnabled: bool = false,
+    /// Show firmware updates from fwupd on the Updates page.
+    FirmwareEnabled: bool = false,
     RecommendedEnabled: bool = true,
     ShellyIconsEnabled: bool = true,
     ShellySearchEnabled: bool = false,

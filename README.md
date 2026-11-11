@@ -200,7 +200,9 @@ fwupd is an optional dependency (`sudo pacman -S fwupd`). Without it, the firmwa
 
 `shelly list-updates firmware --json` prints an array with `DeviceId`, `Name`, `Vendor`, `Plugin`, `CurrentVersion`, `NewVersion`, `Summary`, `DownloadSize`, and `Urgency` for each device; errors go to stderr.
 
-Firmware is deliberately excluded from `shelly upgrade all` and `shelly list-updates all`, and firmware upgrades are not yet available in the Shelly UI.
+Firmware is deliberately excluded from `shelly upgrade all` and `shelly list-updates all`.
+
+In the Shelly UI, turn on **Enable Firmware Updates (fwupd)** in Settings; Shelly installs `fwupd` first if it is missing. The Updates page then shows a separate **Firmware** section whenever fwupd reports updates. **Update Firmware** asks for confirmation and installs exactly the listed devices; the regular **Upgrade** button never touches firmware.
 
 ## Upgrade cache cleaning
 

@@ -56,3 +56,16 @@ pub const CheckUpdatesFlatpak = struct {
     Ref: []const u8 = "",
     FullRef: []const u8 = "",
 };
+
+/// One device from `shelly list-updates firmware`, which reads fwupd.
+pub const FirmwareUpdate = struct {
+    DeviceId: []const u8 = "",
+    Name: []const u8 = "",
+    Vendor: []const u8 = "",
+    Plugin: []const u8 = "",
+    CurrentVersion: []const u8 = "",
+    NewVersion: []const u8 = "",
+    Summary: []const u8 = "",
+    DownloadSize: u64 = 0,
+    Urgency: []const u8 = "",
+};

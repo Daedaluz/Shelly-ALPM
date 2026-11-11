@@ -7,6 +7,7 @@ const Flatpak = @import("../models/flatpak.zig").Flatpak;
 const AppstreamApp = @import("../models/flatpak.zig").AppstreamApp;
 const FlatpakSearchResponse = @import("../models/flatpak.zig").FlatpakSearchResponse;
 const CheckUpdates = @import("../models/sync.zig").CheckUpdates;
+const FirmwareUpdate = @import("../models/sync.zig").FirmwareUpdate;
 const AppImage = @import("../models/appimage.zig").AppImage;
 const AppImageUpdate = @import("../models/appimage.zig").AppImageUpdate;
 const JsonPackFrame = @import("../helpers/ui_decode.zig").JsonPackFrame;
@@ -335,6 +336,27 @@ pub const ShellyCli = struct {
             });
         }
 
+        return error.NoDataFrame;
+    }
+
+    /// Firmware updates reported by fwupd. Fails when fwupd is not installed
+    /// or not working; callers treat that as "nothing to show".
+    pub fn check_firmware_updates(self: ShellyCli) !std.json.Parsed([]FirmwareUpdate) {
+        const result = try self.run(&.{ "list-updates", "firmware" });
+        defer self.allocator.free(result.stdout);
+        defer self.allocator.free(result.stderr);
+
+        var it = JsonPackFrame.frames(result.stdout);
+        while (it.next()) |payload| {
+            const json = JsonPackFrame.decodeBase64(self.allocator, payload) catch continue;
+            defer self.allocator.free(json);
+            // Error and log frames carry a "$kind"; the update list is a bare array.
+            if (std.mem.indexOf(u8, json, "\"$kind\"") != null) continue;
+            return std.json.parseFromSlice([]FirmwareUpdate, self.allocator, json, .{
+                .ignore_unknown_fields = true,
+                .allocate = .alloc_always,
+            });
+        }
         return error.NoDataFrame;
     }
 

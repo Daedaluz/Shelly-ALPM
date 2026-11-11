@@ -58,6 +58,7 @@ pub const ShellySettingsPage = extern struct {
         flatpak_switch: *gtk.Switch,
         recommended_switch: *gtk.Switch,
         appimage_switch: *gtk.Switch,
+        firmware_switch: *gtk.Switch,
         tray_switch: *gtk.Switch,
         tray_auto_switch: *gtk.Switch,
         tray_auto_switch_box: *gtk.Box,
@@ -241,6 +242,13 @@ pub const ShellySettingsPage = extern struct {
             p.appimage_switch.as(gobject.Object),
             *Self,
             &onAppImageNotify,
+            self,
+            .{ .detail = "active" },
+        );
+        _ = gobject.Object.signals.notify.connect(
+            p.firmware_switch.as(gobject.Object),
+            *Self,
+            &onFirmwareNotify,
             self,
             .{ .detail = "active" },
         );
@@ -485,6 +493,10 @@ pub const ShellySettingsPage = extern struct {
         self.onSupportNotify(.appimage);
     }
 
+    fn onFirmwareNotify(_: *gobject.Object, _: *gobject.ParamSpec, self: *Self) callconv(.c) void {
+        self.onSupportNotify(.firmware);
+    }
+
     fn onSupportNotify(self: *Self, feature: SupportFeature) void {
         const p = self.priv();
         if (p.save_guard or !p.loaded or p.support_install_pending != null) return;
@@ -628,6 +640,7 @@ pub const ShellySettingsPage = extern struct {
         const save_result = switch (feature) {
             .flatpak => persistFeatureEnabled(.FlatPackEnabled, true),
             .appimage => persistFeatureEnabled(.AppImageEnabled, true),
+            .firmware => persistFeatureEnabled(.FirmwareEnabled, true),
         };
         save_result catch {
             self.restoreSupportSwitch(feature, false);
@@ -661,6 +674,7 @@ pub const ShellySettingsPage = extern struct {
         return switch (feature) {
             .flatpak => p.flatpak_switch,
             .appimage => p.appimage_switch,
+            .firmware => p.firmware_switch,
         };
     }
 
@@ -668,6 +682,7 @@ pub const ShellySettingsPage = extern struct {
         return switch (feature) {
             .flatpak => cfg.FlatPackEnabled,
             .appimage => cfg.AppImageEnabled,
+            .firmware => cfg.FirmwareEnabled,
         };
     }
 
@@ -679,6 +694,7 @@ pub const ShellySettingsPage = extern struct {
         return switch (feature) {
             .flatpak => translations._("Installing Flatpak support"),
             .appimage => translations._("Installing AppImage support"),
+            .firmware => translations._("Installing firmware update support"),
         };
     }
 
@@ -686,6 +702,7 @@ pub const ShellySettingsPage = extern struct {
         return switch (feature) {
             .flatpak => translations._("Could not start installing Flatpak support."),
             .appimage => translations._("Could not start installing AppImage support."),
+            .firmware => translations._("Could not start installing firmware update support."),
         };
     }
 
@@ -693,6 +710,7 @@ pub const ShellySettingsPage = extern struct {
         return switch (feature) {
             .flatpak => translations._("Could not install Flatpak support."),
             .appimage => translations._("Could not install AppImage support."),
+            .firmware => translations._("Could not install firmware update support."),
         };
     }
 
@@ -700,6 +718,7 @@ pub const ShellySettingsPage = extern struct {
         return switch (feature) {
             .flatpak => translations._("Flatpak support enabled"),
             .appimage => translations._("AppImage support enabled"),
+            .firmware => translations._("Firmware updates enabled"),
         };
     }
 
@@ -1131,6 +1150,7 @@ pub const ShellySettingsPage = extern struct {
         .{ "flatpak_switch", @offsetOf(Private, "flatpak_switch") },
         .{ "recommended_switch", @offsetOf(Private, "recommended_switch") },
         .{ "appimage_switch", @offsetOf(Private, "appimage_switch") },
+        .{ "firmware_switch", @offsetOf(Private, "firmware_switch") },
         .{ "tray_switch", @offsetOf(Private, "tray_switch") },
         .{ "tray_auto_switch", @offsetOf(Private, "tray_auto_switch") },
         .{ "tray_auto_switch_box", @offsetOf(Private, "tray_auto_switch_box") },
@@ -1491,6 +1511,7 @@ fn applyConfig(p: *ShellySettingsPage.Private, cfg: *ShellyConfig) void {
     setSwitch(p.flatpak_switch, cfg.FlatPackEnabled);
     setSwitch(p.recommended_switch, cfg.RecommendedEnabled);
     setSwitch(p.appimage_switch, cfg.AppImageEnabled);
+    setSwitch(p.firmware_switch, cfg.FirmwareEnabled);
     setSwitch(p.tray_switch, cfg.TrayEnabled);
     setSwitch(p.tray_auto_switch, cfg.TrayAutoStart);
     setSwitch(p.daily_schedule, cfg.UseWeeklySchedule);
@@ -1569,6 +1590,7 @@ fn collectIntoConfig(p: *ShellySettingsPage.Private, allocator: std.mem.Allocato
 
     cfg.AurEnabled = getSwitch(p.aur_switch);
     cfg.FlatPackEnabled = getSwitch(p.flatpak_switch);
+    cfg.FirmwareEnabled = getSwitch(p.firmware_switch);
     cfg.RecommendedEnabled = getSwitch(p.recommended_switch);
     cfg.AppImageEnabled = getSwitch(p.appimage_switch);
     cfg.TrayEnabled = getSwitch(p.tray_switch);

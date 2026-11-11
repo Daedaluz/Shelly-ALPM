@@ -127,10 +127,12 @@ fn upgrade(
     invocation: *const parser.Invocation,
     environment: Environment,
 ) !u8 {
-    if (invocation.globals.ui_mode) {
-        // Flashing needs an explicit, informed confirmation that the Shelly UI
-        // does not offer yet. Refuse instead of installing silently.
-        try output.writeErrorFrame(context, "Firmware upgrades are not available in the Shelly UI yet. Run `shelly upgrade firmware` in a terminal.");
+    const ui = invocation.globals.ui_mode;
+    if (ui and !invocation.globals.no_confirm) {
+        // The UI cannot answer the terminal prompt. It shows its own warning
+        // and passes --no-confirm once the user agrees; without that, refuse
+        // instead of flashing silently.
+        try output.writeErrorFrame(context, "Firmware upgrades from the Shelly UI need confirmation in the UI first. Run `shelly upgrade firmware` in a terminal instead.");
         return 1;
     }
     const executable = environment.executable orelse {
@@ -153,9 +155,11 @@ fn upgrade(
     defer updates.deinit();
 
     if (updates.items.len == 0) {
-        try output.writeSuccess(context, up_to_date_message);
+        if (ui) try output.writeInfoFrame(context, up_to_date_message) else try output.writeSuccess(context, up_to_date_message);
         return 0;
     }
+
+    if (ui) return upgradeFromUi(context, invocation, &client, updates.items);
 
     try context.stdout.writeAll("The following firmware updates are available:\n\n");
     try writeUpdatesPlain(context, updates.items);
@@ -197,12 +201,50 @@ fn upgrade(
     return 0;
 }
 
+/// UI-driven install, after the user confirmed in the Shelly UI. Reports
+/// per-device progress as frames the transaction page understands: each
+/// device row is keyed by its name.
+fn upgradeFromUi(
+    context: *runtime.RuntimeContext,
+    invocation: *const parser.Invocation,
+    client: *fwupd.Client,
+    updates: []const fwupd.Update,
+) !u8 {
+    const device_ids = try context.allocator.alloc([]const u8, updates.len);
+    defer context.allocator.free(device_ids);
+    for (updates, device_ids) |update, *device_id| {
+        device_id.* = update.device_id;
+        const message = try std.fmt.allocPrint(context.allocator, "Installing firmware {s} for {s}", .{ update.new_version, update.name });
+        defer context.allocator.free(message);
+        try output.writeAlpmPackageInfoFrame(context, "Installing", message, update.name);
+    }
+
+    client.update(device_ids, .capture) catch |err| {
+        try writeCommandFailure(context, invocation, "Could not complete the firmware upgrade.", err, client.last_error);
+        return 1;
+    };
+
+    for (updates) |update| {
+        const message = try std.fmt.allocPrint(context.allocator, "Updated {s} firmware to {s}", .{ update.name, update.new_version });
+        defer context.allocator.free(message);
+        try output.writeAlpmPackageInfoFrame(context, "PackageUpgraded", message, update.name);
+    }
+    switch (client.pendingRestart() catch .none) {
+        .none => {},
+        .reboot => try output.writeWarningFrame(context, "Restart the computer to finish installing the firmware updates."),
+        .shutdown => try output.writeWarningFrame(context, "Shut down the computer to finish installing the firmware updates."),
+    }
+    return 0;
+}
+
 fn refreshMetadata(
     context: *runtime.RuntimeContext,
     invocation: *const parser.Invocation,
     client: *fwupd.Client,
 ) !void {
-    if (!invocation.globals.json and !invocation.globals.ui_mode) {
+    if (invocation.globals.ui_mode) {
+        try output.writeInfoFrame(context, "Refreshing firmware metadata...");
+    } else if (!invocation.globals.json) {
         try context.stdout.writeAll("Refreshing firmware metadata...\n");
         try context.stdout.flush();
     }
@@ -690,16 +732,63 @@ test "upgrade firmware still succeeds when restart flags cannot be read" {
     try testing.expectEqualStrings("", stderr(&tc));
 }
 
-test "upgrade firmware refuses to flash from the Shelly UI" {
+test "upgrade firmware from the Shelly UI requires the UI's confirmation" {
     var tc: test_support.TestContext = .{};
     tc.init();
     defer tc.deinit();
     var script: Script = .{ .responses = &.{} };
     defer script.deinit();
 
-    const invocation = try parse(&tc, &.{ "upgrade", "firmware", "--ui-mode", "--no-confirm" });
+    const invocation = try parse(&tc, &.{ "upgrade", "firmware", "--ui-mode" });
     try testing.expectEqual(@as(?u8, 1), try dispatchWith(&tc.context, &invocation, script.environment(true)));
     try testing.expectEqual(@as(usize, 0), script.calls.items.len);
+}
+
+test "upgrade firmware from the Shelly UI reports each device as a frame" {
+    var tc: test_support.TestContext = .{};
+    tc.init();
+    defer tc.deinit();
+    var script: Script = .{ .responses = &.{
+        .{ .stdout = two_updates_json },
+        .{ .exit_code = 0 },
+        .{ .stdout = "{\"Devices\":[{\"Flags\":[\"needs-reboot\"]}]}" },
+    } };
+    defer script.deinit();
+
+    const invocation = try parse(&tc, &.{ "upgrade", "firmware", "--ui-mode", "--no-confirm", "--no-refresh" });
+    try testing.expectEqual(@as(?u8, 0), try dispatchWith(&tc.context, &invocation, script.environment(true)));
+    try testing.expectEqualStrings("get-updates,update,get-devices", try script.subcommands());
+    // Never stream fwupdmgr's own output into the frame protocol.
+    try testing.expectEqual(fwupd.Mode.capture, script.modes.items[1]);
+
+    // Decode every frame and check the per-device events the transaction
+    // page keys its rows on.
+    var installing: usize = 0;
+    var upgraded: usize = 0;
+    var restart_warning = false;
+    var frames = std.mem.splitSequence(u8, stdout(&tc), "[JSON]");
+    _ = frames.next();
+    while (frames.next()) |chunk| {
+        const end = std.mem.indexOf(u8, chunk, "[/JSON]") orelse continue;
+        const decoder = std.base64.standard.Decoder;
+        const json = try testing.allocator.alloc(u8, try decoder.calcSizeForSlice(chunk[0..end]));
+        defer testing.allocator.free(json);
+        try decoder.decode(json, chunk[0..end]);
+        const parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, json, .{});
+        defer parsed.deinit();
+        const object = parsed.value.object;
+        const event = object.get("EventType").?.string;
+        if (std.mem.eql(u8, event, "Installing")) installing += 1;
+        if (std.mem.eql(u8, event, "PackageUpgraded")) {
+            upgraded += 1;
+            const name = object.get("PackageName").?.string;
+            try testing.expect(std.mem.eql(u8, name, "Thunderbolt Dock") or std.mem.eql(u8, name, "System Firmware"));
+        }
+        if (std.mem.indexOf(u8, object.get("Message").?.string, "Restart the computer") != null) restart_warning = true;
+    }
+    try testing.expectEqual(@as(usize, 2), installing);
+    try testing.expectEqual(@as(usize, 2), upgraded);
+    try testing.expect(restart_warning);
 }
 
 test "upgrade firmware explains how to enable fwupd when it is missing" {
