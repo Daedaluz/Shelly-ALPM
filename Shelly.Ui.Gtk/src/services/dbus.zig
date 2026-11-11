@@ -17,12 +17,7 @@ const LOGIND_NAME: [:0]const u8 = "org.freedesktop.login1";
 const LOGIND_PATH: [:0]const u8 = "/org/freedesktop/login1";
 const LOGIND_MANAGER_IFACE: [:0]const u8 = "org.freedesktop.login1.Manager";
 
-pub const PolkitStatus = enum {
-    ready,
-    no_daemon,
-    no_agent,
-    unknown,
-};
+const polkit_check = @import("polkit_check.zig");
 
 pub const DBus = struct {
     connection: ?*gio.DBusConnection = null,
@@ -77,36 +72,37 @@ pub const DBus = struct {
         }
     }
 
-    pub fn checkPolkitStatus(self: *DBus) PolkitStatus {
-        switch (self.polkitDaemonPresence()) {
-            .absent => return .no_daemon,
-            .unknown => return .unknown,
-            .present => {},
-        }
-        return switch (self.authAgentPresent()) {
-            .present => .ready,
-            .absent => .no_agent,
-            .unknown => .unknown,
+    /// Probes polkitd and, when it is available, the session's
+    /// authentication agent. See `polkit_check` for how to interpret it.
+    pub fn probePolkit(self: *DBus) polkit_check.Probe {
+        const daemon = self.polkitDaemonPresence();
+        return switch (daemon) {
+            .running, .started => .{ .daemon = daemon, .agent = self.authAgentPresent() },
+            .absent, .unknown => .{ .daemon = daemon },
         };
     }
 
     pub fn polkitAvailable(self: *DBus) bool {
-        return self.polkitDaemonPresence() == .present;
+        return switch (self.polkitDaemonPresence()) {
+            .running, .started => true,
+            .absent, .unknown => false,
+        };
     }
 
-    const DaemonPresence = enum { present, absent, unknown };
-
-    fn polkitDaemonPresence(self: *DBus) DaemonPresence {
+    /// polkitd is D-Bus activated, so it may not own its name until
+    /// something talks to it. Ask the bus to start it, as any polkit client
+    /// would implicitly, instead of only checking for a current owner.
+    fn polkitDaemonPresence(self: *DBus) polkit_check.Daemon {
         const conn = self.ensureSystemConnection() orelse return .unknown;
-        const params = glib.Variant.new("(s)", POLKIT_NAME.ptr);
-        const reply_type = glib.VariantType.new("(b)");
+        const params = glib.Variant.new("(su)", POLKIT_NAME.ptr, @as(u32, 0));
+        const reply_type = glib.VariantType.new("(u)");
         defer reply_type.free();
         var call_err: ?*glib.Error = null;
         const result = conn.callSync(
             "org.freedesktop.DBus",
             "/org/freedesktop/DBus",
             "org.freedesktop.DBus",
-            "NameHasOwner",
+            "StartServiceByName",
             params,
             reply_type,
             .{},
@@ -115,21 +111,25 @@ pub const DBus = struct {
             &call_err,
         );
         if (call_err) |e| {
-            std.log.info("Could not check whether the authorization service is running. {0f}", .{diagnostics.safe(e.f_message orelse "unknown")});
-            glib.Error.free(e);
-            return .unknown;
+            defer glib.Error.free(e);
+            const remote = gio.DBusError.getRemoteError(e);
+            defer if (remote) |name| glib.free(name);
+            const error_name: []const u8 = if (remote) |name| std.mem.span(name) else "";
+            const daemon = polkit_check.daemonFromStartService(null, error_name);
+            if (daemon == .unknown)
+                std.log.info("Could not check whether the authorization service is running. {0f}", .{diagnostics.safe(e.f_message orelse "unknown")});
+            return daemon;
         }
         const res = result orelse return .unknown;
         defer res.unref();
         const child = res.getChildValue(0);
         defer child.unref();
-        std.log.debug("NameHasOwner(PolicyKit1) = {}", .{child.getBoolean()});
-        return if (child.getBoolean() != 0) .present else .absent;
+        const reply = child.getUint32();
+        std.log.debug("StartServiceByName(PolicyKit1) = {d}", .{reply});
+        return polkit_check.daemonFromStartService(reply, null);
     }
 
-    const AgentPresence = enum { present, absent, unknown };
-
-    fn authAgentPresent(self: *DBus) AgentPresence {
+    fn authAgentPresent(self: *DBus) polkit_check.Agent {
         const conn = self.ensureSystemConnection() orelse return .unknown;
 
         var sid_buf: [64]u8 = undefined;

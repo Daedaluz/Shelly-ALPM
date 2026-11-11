@@ -39,6 +39,7 @@ const deep_link = @import("helpers/deep_link.zig");
 const ConfirmDialog = @import("dialog/page/yn_dialog.zig").ConfirmDialog;
 const PolkitDialog = @import("dialog/page/polkit_warning.zig").PolkitDialog;
 const DBus = @import("services/dbus.zig").DBus;
+const polkit_check = @import("services/polkit_check.zig");
 
 const NavButton = struct {
     button: *gtk.Button,
@@ -169,16 +170,42 @@ pub const ShellyWindow = extern struct {
     }
 
     fn checkPolkitLockout(self: *ShellyWindow) void {
+        runPolkitCheck(self, 0);
+    }
+
+    const PolkitRetry = struct { window: *ShellyWindow, attempt: usize };
+
+    fn runPolkitCheck(self: *ShellyWindow, attempt: usize) void {
         var dbus = DBus{};
         defer dbus.deinit();
 
-        const status = dbus.checkPolkitStatus();
-        if (status == .no_agent or status == .no_daemon) {
-            const dialog = PolkitDialog.new(&on_polkit_close, self);
-            self.showLockoutNamed(dialog.as(gtk.Widget), translations._("polkit is required"));
-            // Not focusClose(): mounting the lockout already focuses the dialog's
-            // only control, and a second focus move fires a second announcement.
+        switch (polkit_check.decide(dbus.probePolkit(), attempt)) {
+            .ok => {},
+            .no_daemon, .no_agent => {
+                const dialog = PolkitDialog.new(&on_polkit_close, self);
+                self.showLockoutNamed(dialog.as(gtk.Widget), translations._("polkit is required"));
+                // Not focusClose(): mounting the lockout already focuses the dialog's
+                // only control, and a second focus move fires a second announcement.
+            },
+            .retry_after_ms => |delay_ms| {
+                // The agent may still be registering; look again without
+                // blocking the window. The retry keeps the window alive.
+                const retry = std.heap.c_allocator.create(PolkitRetry) catch return;
+                _ = self.as(gobject.Object).ref();
+                retry.* = .{ .window = self, .attempt = attempt + 1 };
+                _ = glib.timeoutAdd(delay_ms, &onPolkitRetry, retry);
+            },
         }
+    }
+
+    fn onPolkitRetry(data: ?*anyopaque) callconv(.c) c_int {
+        const retry: *PolkitRetry = @ptrCast(@alignCast(data.?));
+        defer {
+            retry.window.as(gobject.Object).unref();
+            std.heap.c_allocator.destroy(retry);
+        }
+        runPolkitCheck(retry.window, retry.attempt);
+        return 0;
     }
 
     fn on_polkit_close(ctx: ?*anyopaque) void {
