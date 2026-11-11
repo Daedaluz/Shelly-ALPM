@@ -39,35 +39,53 @@ pkgver() {
     "$(git rev-parse --short=7 HEAD)"
 }
 
+# Use the Zig that makedepends pins, even when another zig (for example a
+# manual install under ~/.local) comes first on PATH.
+_zig=/usr/bin/zig
+_zig_version=0.17.1
+
+_require_zig() {
+  local found
+  found="$("${_zig}" version 2>/dev/null)" || {
+    error "${_zig} is missing. Install the zig package (${_zig_version})."
+    return 1
+  }
+  if [[ "${found}" != "${_zig_version}" ]]; then
+    error "Shelly needs Zig ${_zig_version}, but ${_zig} is ${found}."
+    return 1
+  fi
+}
+
 build() {
+  _require_zig
   cd "$srcdir/${pkgname}"
 
-  (cd Shelly.Flatpak.Backend && ZIG_GLOBAL_CACHE_DIR="${srcdir}/zig-global-cache" zig build --verbose \
+  (cd Shelly.Flatpak.Backend && ZIG_GLOBAL_CACHE_DIR="${srcdir}/zig-global-cache" "${_zig}" build --verbose \
     --prefix "${srcdir}/${pkgbase}/out-flatpak-backend" \
     --cache-dir "${srcdir}/zig-cache" \
     -Dcpu=baseline \
     -Doptimize=safe)
 
-  (cd Shelly.Ui.Gtk && ZIG_GLOBAL_CACHE_DIR="${srcdir}/zig-global-cache" zig build --verbose \
+  (cd Shelly.Ui.Gtk && ZIG_GLOBAL_CACHE_DIR="${srcdir}/zig-global-cache" "${_zig}" build --verbose \
     --prefix "${srcdir}/${pkgname}/out" \
     --cache-dir "${srcdir}/zig-cache" \
     -Dflatpak-backend-package=shelly-flatpak-backend-fwupd \
     -Dcpu=baseline \
     -Doptimize=safe)
 
-  (cd Shelly.Cli.Zig && ZIG_GLOBAL_CACHE_DIR="${srcdir}/zig-global-cache" zig build -Dlibalpm="${_shelly_libalpm}" --verbose \
+  (cd Shelly.Cli.Zig && ZIG_GLOBAL_CACHE_DIR="${srcdir}/zig-global-cache" "${_zig}" build -Dlibalpm="${_shelly_libalpm}" --verbose \
     --prefix "${srcdir}/${pkgname}/out-cli" \
     --cache-dir "${srcdir}/zig-cache" \
     -Dcpu=baseline \
     -Doptimize=small)
 
-  (cd Shelly.Key && ZIG_GLOBAL_CACHE_DIR="${srcdir}/zig-global-cache" zig build --verbose \
+  (cd Shelly.Key && ZIG_GLOBAL_CACHE_DIR="${srcdir}/zig-global-cache" "${_zig}" build --verbose \
     --prefix "${srcdir}/${pkgname}/out-key" \
     --cache-dir "${srcdir}/zig-cache" \
     -Dcpu=baseline \
     -Doptimize=small)
 
-    (cd Shelly.Notifications.Zig && ZIG_GLOBAL_CACHE_DIR="${srcdir}/zig-global-cache" zig build --verbose \
+    (cd Shelly.Notifications.Zig && ZIG_GLOBAL_CACHE_DIR="${srcdir}/zig-global-cache" "${_zig}" build --verbose \
     --prefix "${srcdir}/${pkgbase}/out-notifications" \
     --cache-dir "${srcdir}/zig-cache" \
     -Dcpu=baseline \
@@ -97,13 +115,14 @@ build() {
 }
 
 check() {
+  _require_zig
   cd "$srcdir/${pkgbase}"
 
-  (cd Shelly.Flatpak.Backend && ZIG_GLOBAL_CACHE_DIR="${srcdir}/zig-global-cache" zig build test abi-test integration-test \
+  (cd Shelly.Flatpak.Backend && ZIG_GLOBAL_CACHE_DIR="${srcdir}/zig-global-cache" "${_zig}" build test abi-test integration-test \
     --cache-dir "${srcdir}/zig-cache")
-  (cd Shelly.PackageManager && ZIG_GLOBAL_CACHE_DIR="${srcdir}/zig-global-cache" zig build -Dlibalpm="${_shelly_libalpm}" flatpak-test \
+  (cd Shelly.PackageManager && ZIG_GLOBAL_CACHE_DIR="${srcdir}/zig-global-cache" "${_zig}" build -Dlibalpm="${_shelly_libalpm}" flatpak-test \
     --cache-dir "${srcdir}/zig-cache")
-  (cd Shelly.Cli.Zig && ZIG_GLOBAL_CACHE_DIR="${srcdir}/zig-global-cache" zig build -Dlibalpm="${_shelly_libalpm}" test \
+  (cd Shelly.Cli.Zig && ZIG_GLOBAL_CACHE_DIR="${srcdir}/zig-global-cache" "${_zig}" build -Dlibalpm="${_shelly_libalpm}" test \
     --cache-dir "${srcdir}/zig-cache")
 }
 
