@@ -116,6 +116,14 @@
             <property name="active">true</property>
           </object>
         </child>
+        <child>
+          <object class="GtkToggleButton" id="firmware_toggle">
+            <property name="label" translatable="yes">Firmware</property>
+            <property name="active">true</property>
+            <property name="visible">false</property>
+            <property name="tooltip-text" translatable="yes">Show firmware updates from fwupd</property>
+          </object>
+        </child>
       </object>
     </child>
     <child>

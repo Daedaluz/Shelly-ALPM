@@ -69,3 +69,16 @@ pub const FirmwareUpdate = struct {
     DownloadSize: u64 = 0,
     Urgency: []const u8 = "",
 };
+
+/// One device from `shelly list firmware`: everything fwupd can update.
+pub const FirmwareDevice = struct {
+    DeviceId: []const u8 = "",
+    Name: []const u8 = "",
+    Vendor: []const u8 = "",
+    Plugin: []const u8 = "",
+    Version: []const u8 = "",
+    Summary: []const u8 = "",
+    /// New version fwupd offers, or empty when the device is up to date.
+    UpdateVersion: []const u8 = "",
+    Urgency: []const u8 = "",
+};

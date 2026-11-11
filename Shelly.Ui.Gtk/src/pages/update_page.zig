@@ -12,7 +12,7 @@ const ShellyCli = @import("../services/shelly_cli.zig").ShellyCli;
 const ShellyCommands = @import("../services/shelly_operation.zig").ShellyCommands;
 const CheckUpdates = @import("../models/sync.zig").CheckUpdates;
 const FirmwareUpdate = @import("../models/sync.zig").FirmwareUpdate;
-const ConfirmDialog = @import("../dialog/page/yn_dialog.zig").ConfirmDialog;
+const firmware_install = @import("../helpers/firmware_install.zig");
 const UpdateObject = @import("../g_objects/update_object.zig").UpdateObject;
 const UpdateSource = @import("../g_objects/update_object.zig").UpdateSource;
 const ShellyWindow = @import("../shelly_window.zig").ShellyWindow;
@@ -48,6 +48,7 @@ pub const UpdatePage = extern struct {
         filter_model: *gtk.FilterListModel,
         selection: *gtk.NoSelection,
         upgrade_button: *gtk.Button,
+        firmware_toggle: *gtk.ToggleButton,
         firmware_section: *gtk.Box,
         firmware_title: *gtk.Label,
         firmware_list: *gtk.ListBox,
@@ -125,6 +126,7 @@ pub const UpdatePage = extern struct {
         _ = gtk.ToggleButton.signals.toggled.connect(p.native_toggle, *Self, &on_source_toggled, self, .{});
         _ = gtk.ToggleButton.signals.toggled.connect(p.aur_toggle, *Self, &on_source_toggled, self, .{});
         _ = gtk.ToggleButton.signals.toggled.connect(p.flatpak_toggle, *Self, &on_source_toggled, self, .{});
+        _ = gtk.ToggleButton.signals.toggled.connect(p.firmware_toggle, *Self, &on_firmware_toggled, self, .{});
         applyConfig(self);
         support.connectLifecycle(Self, self);
     }
@@ -637,9 +639,10 @@ pub const UpdatePage = extern struct {
         const p = self.priv();
         // Results still in flight belong to an older view; drop them.
         p.firmware_generation += 1;
-        gtk.Widget.setVisible(p.firmware_section.as(gtk.Widget), 0);
         gtk.ListBox.removeAll(p.firmware_list);
         p.firmware_updates = &.{};
+        set_firmware_count(self, 0);
+        sync_firmware_section(self);
         if (p.firmware_arena) |arena| {
             arena.deinit();
             std.heap.c_allocator.destroy(arena);
@@ -648,8 +651,11 @@ pub const UpdatePage = extern struct {
     }
 
     fn start_firmware_load(self: *Self) void {
-        if (!firmwareEnabled()) return;
         const p = self.priv();
+        // The setting can change while Shelly runs; follow it on every load.
+        const enabled = firmwareEnabled();
+        gtk.Widget.setVisible(p.firmware_toggle.as(gtk.Widget), @intFromBool(enabled));
+        if (!enabled) return;
         const thread = std.Thread.spawn(.{}, firmware_worker, .{ self, p.firmware_generation }) catch return;
         thread.detach();
     }
@@ -696,8 +702,26 @@ pub const UpdatePage = extern struct {
         }
         const heading = std.fmt.allocPrintSentinel(alloc, "{s} · {d}", .{ translations._("Firmware"), result.updates.len }, 0) catch translations._("Firmware");
         gtk.Label.setLabel(p.firmware_title, heading);
-        gtk.Widget.setVisible(p.firmware_section.as(gtk.Widget), 1);
+        set_firmware_count(page, result.updates.len);
+        sync_firmware_section(page);
         return 0;
+    }
+
+    fn set_firmware_count(self: *Self, count: usize) void {
+        const p = self.priv();
+        var buffer: [64]u8 = undefined;
+        gtk.Button.setLabel(p.firmware_toggle.as(gtk.Button), std.fmt.bufPrintSentinel(&buffer, "{s} · {d}", .{ translations._("Firmware"), count }, 0) catch translations._("Firmware"));
+    }
+
+    /// The section shows when the Firmware chip is on and fwupd has updates.
+    fn sync_firmware_section(self: *Self) void {
+        const p = self.priv();
+        const show = p.firmware_updates.len != 0 and gtk.ToggleButton.getActive(p.firmware_toggle) != 0;
+        gtk.Widget.setVisible(p.firmware_section.as(gtk.Widget), @intFromBool(show));
+    }
+
+    fn on_firmware_toggled(_: *gtk.ToggleButton, self: *Self) callconv(.c) void {
+        sync_firmware_section(self);
     }
 
     fn firmware_row(alloc: std.mem.Allocator, update: FirmwareUpdate) !*gtk.Widget {
@@ -736,39 +760,11 @@ pub const UpdatePage = extern struct {
 
     fn update_firmware(self: *Self) callconv(.c) void {
         const p = self.priv();
-        if (p.firmware_updates.len == 0) return;
-
-        var buf: [1024]u8 = undefined;
-        const message = std.fmt.bufPrintSentinel(&buf, "{s}\n\n{s}", .{
-            translations._("Shelly will install firmware for the devices listed under Firmware."),
-            translations._("Keep the computer plugged in and do not power it off while firmware is being installed. Some devices finish installing only after a restart."),
-        }, 0) catch translations._("Install firmware updates?");
-        const dialog = ConfirmDialog.new(translations._("Install firmware updates?"), message, &on_firmware_confirm, self);
-        dialog.setButtons(translations._("Update Firmware"), translations._("Cancel"));
-        if (support.getWindow(ShellyWindow, self)) |win| win.showLockout(dialog.as(gtk.Widget));
-    }
-
-    fn on_firmware_confirm(ctx: ?*anyopaque, confirmed: bool) void {
-        const self: *Self = @ptrCast(@alignCast(ctx.?));
         const win = support.getWindow(ShellyWindow, self) orelse return;
-        win.hideLockout();
-        if (!confirmed) return;
-
-        const p = self.priv();
         var names: std.ArrayListUnmanaged([]const u8) = .empty;
         defer names.deinit(std.heap.c_allocator);
         for (p.firmware_updates) |update| names.append(std.heap.c_allocator, update.Name) catch return;
-
-        // --no-refresh keeps the install to exactly the devices shown here;
-        // --no-confirm is the user's answer to the dialog above.
-        win.startTransaction(.{
-            .title = translations._("Updating firmware"),
-            .argv = &.{ "upgrade", "firmware", "--no-confirm", "--no-refresh" },
-            .packages = names.items,
-            .on_complete = &on_firmware_complete,
-            .privileged = true,
-            .ctx = self,
-        });
+        firmware_install.confirmAndInstall(win, names.items, &on_firmware_complete, self);
     }
 
     fn on_firmware_complete(ctx: *anyopaque, success: bool) void {
@@ -778,7 +774,7 @@ pub const UpdatePage = extern struct {
         start_firmware_load(self);
     }
 
-    const template_children = .{ .{ "content_list", @offsetOf(Private, "content_list") }, .{ "selected_label", @offsetOf(Private, "selected_label") }, .{ "refresh_button", @offsetOf(Private, "refresh_button") }, .{ "native_toggle", @offsetOf(Private, "native_toggle") }, .{ "aur_toggle", @offsetOf(Private, "aur_toggle") }, .{ "flatpak_toggle", @offsetOf(Private, "flatpak_toggle") }, .{ "updates_stack", @offsetOf(Private, "updates_stack") }, .{ "loading_page", @offsetOf(Private, "loading_page") }, .{ "list_page", @offsetOf(Private, "list_page") }, .{ "empty_page", @offsetOf(Private, "empty_page") }, .{ "error_page", @offsetOf(Private, "error_page") }, .{ "loading_spinner", @offsetOf(Private, "loading_spinner") }, .{ "error_label", @offsetOf(Private, "error_label") }, .{ "upgrade_button", @offsetOf(Private, "upgrade_button") }, .{ "firmware_section", @offsetOf(Private, "firmware_section") }, .{ "firmware_title", @offsetOf(Private, "firmware_title") }, .{ "firmware_list", @offsetOf(Private, "firmware_list") }, .{ "firmware_button", @offsetOf(Private, "firmware_button") } };
+    const template_children = .{ .{ "content_list", @offsetOf(Private, "content_list") }, .{ "selected_label", @offsetOf(Private, "selected_label") }, .{ "refresh_button", @offsetOf(Private, "refresh_button") }, .{ "native_toggle", @offsetOf(Private, "native_toggle") }, .{ "aur_toggle", @offsetOf(Private, "aur_toggle") }, .{ "flatpak_toggle", @offsetOf(Private, "flatpak_toggle") }, .{ "updates_stack", @offsetOf(Private, "updates_stack") }, .{ "loading_page", @offsetOf(Private, "loading_page") }, .{ "list_page", @offsetOf(Private, "list_page") }, .{ "empty_page", @offsetOf(Private, "empty_page") }, .{ "error_page", @offsetOf(Private, "error_page") }, .{ "loading_spinner", @offsetOf(Private, "loading_spinner") }, .{ "error_label", @offsetOf(Private, "error_label") }, .{ "upgrade_button", @offsetOf(Private, "upgrade_button") }, .{ "firmware_toggle", @offsetOf(Private, "firmware_toggle") }, .{ "firmware_section", @offsetOf(Private, "firmware_section") }, .{ "firmware_title", @offsetOf(Private, "firmware_title") }, .{ "firmware_list", @offsetOf(Private, "firmware_list") }, .{ "firmware_button", @offsetOf(Private, "firmware_button") } };
 
     pub const Class = extern struct {
         parent_class: Parent.Class,

@@ -63,4 +63,11 @@ pub const variants = [_]types.Variant{
             ),
         },
     },
+    .{
+        .action = .list,
+        .name = "firmware",
+        .type_code = 'w',
+        .description = "List the devices fwupd can update, with their installed firmware version and any available update, when fwupd is installed.",
+        .implementation = "PackageManager.firmware.Client.getDevices / getUpdates (fwupdmgr get-devices / get-updates --json)",
+    },
 };

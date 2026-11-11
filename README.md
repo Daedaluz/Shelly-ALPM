@@ -189,6 +189,7 @@ Flatpak removal accepts mutually exclusive `--user` and `--system` flags; omitti
 When [fwupd](https://fwupd.org) is installed, Shelly can list and install device firmware updates from the LVFS:
 
 ```
+shelly list firmware                # or: shelly -Lw  (devices, versions, updates)
 shelly list-updates firmware        # or: shelly -Pw
 shelly list-updates firmware --refresh
 shelly upgrade firmware             # or: shelly -Uw
@@ -202,7 +203,7 @@ fwupd is an optional dependency (`sudo pacman -S fwupd`). Without it, the firmwa
 
 Firmware is deliberately excluded from `shelly upgrade all` and `shelly list-updates all`.
 
-In the Shelly UI, turn on **Enable Firmware Updates (fwupd)** in Settings; Shelly installs `fwupd` first if it is missing. The Updates page then shows a separate **Firmware** section whenever fwupd reports updates. **Update Firmware** asks for confirmation and installs exactly the listed devices; the regular **Upgrade** button never touches firmware.
+In the Shelly UI, turn on **Enable Firmware Updates (fwupd)** in Settings; Shelly installs `fwupd` first if it is missing. A **Firmware** page appears in the sidebar with every device fwupd can update, its installed version, and any available update; **Check Again** downloads current metadata first. The Updates page gets a **Firmware** chip next to System, AUR and Flatpak, and a separate **Firmware** section whenever fwupd reports updates. **Update Firmware** asks for confirmation and installs exactly the listed devices; the regular **Upgrade** button never touches firmware.
 
 ## Upgrade cache cleaning
 

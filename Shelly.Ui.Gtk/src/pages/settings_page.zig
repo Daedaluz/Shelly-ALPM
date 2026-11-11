@@ -436,6 +436,7 @@ pub const ShellySettingsPage = extern struct {
             updated.AurEnabled != cfg.AurEnabled or
             updated.FlatPackEnabled != cfg.FlatPackEnabled or
             updated.AppImageEnabled != cfg.AppImageEnabled or
+            updated.FirmwareEnabled != cfg.FirmwareEnabled or
             updated.ShellySearchEnabled != cfg.ShellySearchEnabled or
             !std.mem.eql(u8, updated.Culture, cfg.Culture);
 

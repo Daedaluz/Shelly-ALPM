@@ -20,6 +20,7 @@ const spec = @import("../cli/spec.zig");
 const fwupd = PackageManager.firmware;
 
 const list_command_path = "shelly list-updates firmware";
+const devices_command_path = "shelly list firmware";
 const upgrade_command_path = "shelly upgrade firmware";
 pub const refresh_option = "--refresh";
 pub const no_refresh_option = "--no-refresh";
@@ -51,6 +52,7 @@ pub fn dispatch(
 
 fn isFirmwarePath(path: []const u8) bool {
     return std.mem.eql(u8, path, list_command_path) or
+        std.mem.eql(u8, path, devices_command_path) or
         std.mem.eql(u8, path, upgrade_command_path);
 }
 
@@ -61,6 +63,8 @@ fn dispatchWith(
 ) !?u8 {
     if (std.mem.eql(u8, invocation.command.path, list_command_path))
         return try listUpdates(context, invocation, environment);
+    if (std.mem.eql(u8, invocation.command.path, devices_command_path))
+        return try listDevices(context, invocation, environment);
     if (std.mem.eql(u8, invocation.command.path, upgrade_command_path))
         return try upgrade(context, invocation, environment);
     return null;
@@ -116,6 +120,108 @@ fn listUpdates(
         }
     }
     return 0;
+}
+
+// ---------------------------------------------------------------------------
+// list firmware
+// ---------------------------------------------------------------------------
+
+/// A device with the update fwupd offers for it, if any.
+const DeviceStatus = struct {
+    device: fwupd.Device,
+    update: ?fwupd.Update,
+};
+
+fn listDevices(
+    context: *runtime.RuntimeContext,
+    invocation: *const parser.Invocation,
+    environment: Environment,
+) !u8 {
+    const executable = environment.executable orelse {
+        try writeError(context, invocation, unavailable_message);
+        return 1;
+    };
+    var client: fwupd.Client = .{
+        .allocator = context.allocator,
+        .runner = environment.runner,
+        .executable = executable,
+    };
+    defer client.deinit();
+
+    var devices = client.getDevices() catch |err| {
+        try writeCommandFailure(context, invocation, "Could not list firmware devices.", err, client.last_error);
+        return 1;
+    };
+    defer devices.deinit();
+    // Updates are optional here: the device list is still useful without
+    // them, for example before metadata has ever been downloaded.
+    var updates: ?fwupd.UpdateList = client.getUpdates() catch |err| blk: {
+        if (err == error.OutOfMemory) return err;
+        break :blk null;
+    };
+    defer if (updates) |*list| list.deinit();
+
+    const statuses = try context.allocator.alloc(DeviceStatus, devices.items.len);
+    defer context.allocator.free(statuses);
+    for (devices.items, statuses) |device, *status| {
+        status.* = .{ .device = device, .update = null };
+        if (updates) |list| for (list.items) |update| {
+            if (std.mem.eql(u8, update.device_id, device.device_id)) status.update = update;
+        };
+    }
+
+    if (invocation.globals.ui_mode) {
+        var payload = std.Io.Writer.Allocating.init(context.allocator);
+        defer payload.deinit();
+        try writeDevicesJson(&payload.writer, statuses);
+        try output.writeFrame(context, payload.writer.buffered());
+    } else if (invocation.globals.json) {
+        try writeDevicesJson(context.stdout, statuses);
+        try context.stdout.writeByte('\n');
+        try context.stdout.flush();
+    } else {
+        try writeDevicesPlain(context, statuses);
+    }
+    return 0;
+}
+
+fn writeDevicesPlain(context: *runtime.RuntimeContext, statuses: []const DeviceStatus) !void {
+    if (statuses.len == 0) {
+        try context.stdout.writeAll("fwupd reports no devices that can be updated.\n");
+        try context.stdout.flush();
+        return;
+    }
+    var storage = std.heap.ArenaAllocator.init(context.allocator);
+    defer storage.deinit();
+    const allocator = storage.allocator();
+    const rows = try allocator.alloc([]const []const u8, statuses.len);
+    for (statuses, rows) |status, *row| {
+        const cells = try allocator.alloc([]const u8, 4);
+        cells[0] = status.device.name;
+        cells[1] = if (status.device.vendor.len == 0) "Unknown" else status.device.vendor;
+        cells[2] = if (status.device.version.len == 0) "Unknown" else status.device.version;
+        cells[3] = if (status.update) |update| update.new_version else "Up to date";
+        row.* = cells;
+    }
+    try table.write(context, &.{ "Device", "Vendor", "Version", "Update" }, rows);
+}
+
+fn writeDevicesJson(writer: *std.Io.Writer, statuses: []const DeviceStatus) !void {
+    var json: std.json.Stringify = .{ .writer = writer };
+    try json.beginArray();
+    for (statuses) |status| {
+        try json.beginObject();
+        try field(&json, "DeviceId", status.device.device_id);
+        try field(&json, "Name", status.device.name);
+        try field(&json, "Vendor", status.device.vendor);
+        try field(&json, "Plugin", status.device.plugin);
+        try field(&json, "Version", status.device.version);
+        try field(&json, "Summary", status.device.summary);
+        try field(&json, "UpdateVersion", if (status.update) |update| update.new_version else "");
+        try field(&json, "Urgency", if (status.update) |update| update.urgency else "");
+        try json.endObject();
+    }
+    try json.endArray();
 }
 
 // ---------------------------------------------------------------------------
@@ -517,6 +623,51 @@ test "firmware commands are registered with long names and shortcodes" {
     const other = try parse(&tc, &.{ "list-updates", "flatpak" });
     try testing.expectEqual(@as(?u8, null), try dispatchWith(&tc.context, &other, script.environment(true)));
     try testing.expectEqual(@as(usize, 0), script.calls.items.len);
+}
+
+test "list firmware merges devices with available updates" {
+    var tc: test_support.TestContext = .{};
+    tc.init();
+    defer tc.deinit();
+    var script: Script = .{ .responses = &.{
+        .{ .stdout =
+        \\{"Devices":[
+        \\  {"Name":"System Firmware","DeviceId":"uefi-id","Vendor":"LENOVO","Version":"0.1.48","Flags":["updatable"]},
+        \\  {"Name":"NVMe SSD","DeviceId":"nvme-id","Vendor":"Samsung","Version":"3B2QGXA7","Flags":["updatable"]},
+        \\  {"Name":"CPU","DeviceId":"cpu-id","Flags":["internal"]}
+        \\]}
+        },
+        .{ .stdout = two_updates_json },
+    } };
+    defer script.deinit();
+
+    const invocation = try parse(&tc, &.{ "list", "firmware", "--json" });
+    try testing.expectEqual(@as(?u8, 0), try dispatchWith(&tc.context, &invocation, script.environment(true)));
+    try testing.expectEqualStrings("get-devices,get-updates", try script.subcommands());
+
+    const parsed = try std.json.parseFromSlice(std.json.Value, testing.allocator, stdout(&tc), .{});
+    defer parsed.deinit();
+    const items = parsed.value.array.items;
+    try testing.expectEqual(@as(usize, 2), items.len);
+    try testing.expectEqualStrings("0.1.49", items[0].object.get("UpdateVersion").?.string);
+    try testing.expectEqualStrings("high", items[0].object.get("Urgency").?.string);
+    try testing.expectEqualStrings("", items[1].object.get("UpdateVersion").?.string);
+}
+
+test "list firmware still lists devices when update metadata is unavailable" {
+    var tc: test_support.TestContext = .{};
+    tc.init();
+    defer tc.deinit();
+    var script: Script = .{ .responses = &.{
+        .{ .stdout = "{\"Devices\":[{\"Name\":\"Disk\",\"DeviceId\":\"d\",\"Version\":\"1\",\"Flags\":[\"updatable\"]}]}" },
+        .{ .exit_code = 1, .stderr = "no metadata" },
+    } };
+    defer script.deinit();
+
+    const invocation = try parse(&tc, &.{ "list", "firmware" });
+    try testing.expectEqual(@as(?u8, 0), try dispatchWith(&tc.context, &invocation, script.environment(true)));
+    try expectContains(stdout(&tc), "Disk");
+    try expectContains(stdout(&tc), "Up to date");
 }
 
 test "list-updates firmware explains how to enable fwupd when it is missing" {

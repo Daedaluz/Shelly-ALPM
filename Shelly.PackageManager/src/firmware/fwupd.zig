@@ -188,6 +188,27 @@ pub const UpdateList = struct {
     }
 };
 
+/// One device fwupd can update, whether or not an update is available.
+pub const Device = struct {
+    device_id: []const u8,
+    name: []const u8,
+    vendor: []const u8,
+    plugin: []const u8,
+    version: []const u8,
+    summary: []const u8,
+};
+
+/// Owned list of devices. Every string lives in `arena`.
+pub const DeviceList = struct {
+    items: []const Device,
+    arena: std.heap.ArenaAllocator,
+
+    pub fn deinit(self: *DeviceList) void {
+        self.arena.deinit();
+        self.* = undefined;
+    }
+};
+
 /// Restart needed before installed firmware takes effect.
 pub const PendingRestart = enum {
     none,
@@ -266,6 +287,15 @@ pub const Client = struct {
 
     /// Reports whether any device is waiting for a reboot or shutdown to
     /// finish installing firmware. A shutdown requirement wins over reboot.
+    /// Lists the devices fwupd can update, with their installed versions.
+    pub fn getDevices(self: *Client) Error!DeviceList {
+        var output = try self.capture(&.{ "get-devices", "--json" });
+        defer output.deinit(self.allocator);
+        if (output.nothingToDo()) return .{ .items = &.{}, .arena = std.heap.ArenaAllocator.init(self.allocator) };
+        if (!output.succeeded()) return self.fail(output);
+        return parseDevices(self.allocator, output.stdout);
+    }
+
     pub fn pendingRestart(self: *Client) Error!PendingRestart {
         var output = try self.capture(&.{ "get-devices", "--json" });
         defer output.deinit(self.allocator);
@@ -356,6 +386,48 @@ pub fn parseUpdates(allocator: std.mem.Allocator, json: []const u8) Error!Update
     }
     list.items = try updates.toOwnedSlice(arena);
     return list;
+}
+
+/// Parses `fwupdmgr get-devices --json`, keeping devices with the
+/// `updatable` flag: those are the ones firmware updates can target.
+pub fn parseDevices(allocator: std.mem.Allocator, json: []const u8) Error!DeviceList {
+    var list: DeviceList = .{ .items = &.{}, .arena = std.heap.ArenaAllocator.init(allocator) };
+    errdefer list.deinit();
+    const arena = list.arena.allocator();
+
+    const parsed = std.json.parseFromSlice(std.json.Value, arena, json, .{}) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return error.InvalidFwupdOutput,
+    };
+    const devices = try devicesArray(parsed.value);
+
+    var result: std.ArrayList(Device) = .empty;
+    for (devices) |device_value| {
+        if (device_value != .object) return error.InvalidFwupdOutput;
+        const device = device_value.object;
+        if (!hasFlag(device, "updatable")) continue;
+        const device_id = string(device, "DeviceId");
+        if (device_id.len == 0) continue;
+        try result.append(arena, .{
+            .device_id = device_id,
+            .name = firstNonEmpty(string(device, "Name"), device_id),
+            .vendor = string(device, "Vendor"),
+            .plugin = string(device, "Plugin"),
+            .version = string(device, "Version"),
+            .summary = string(device, "Summary"),
+        });
+    }
+    list.items = try result.toOwnedSlice(arena);
+    return list;
+}
+
+fn hasFlag(object: std.json.ObjectMap, flag: []const u8) bool {
+    const flags = object.get("Flags") orelse return false;
+    if (flags != .array) return false;
+    for (flags.array.items) |value| {
+        if (value == .string and std.mem.eql(u8, value.string, flag)) return true;
+    }
+    return false;
 }
 
 /// Parses `fwupdmgr get-devices --json` for devices that still need a
@@ -538,6 +610,37 @@ test "parseUpdates rejects malformed output" {
     for (cases) |json| {
         try testing.expectError(error.InvalidFwupdOutput, parseUpdates(testing.allocator, json));
     }
+}
+
+test "parseDevices keeps updatable devices only" {
+    var list = try parseDevices(testing.allocator,
+        \\{"Devices":[
+        \\  {"Name":"System Firmware","DeviceId":"uefi","Vendor":"LENOVO","Plugin":"uefi_capsule","Version":"0.1.48","Flags":["internal","updatable"]},
+        \\  {"Name":"Intel Core i7","DeviceId":"cpu","Flags":["internal"]},
+        \\  {"DeviceId":"dock","Version":"20.00","Summary":"USB-C dock","Flags":["updatable","needs-reboot"]},
+        \\  {"Name":"No id","Flags":["updatable"]}
+        \\]}
+    );
+    defer list.deinit();
+    try testing.expectEqual(@as(usize, 2), list.items.len);
+    try testing.expectEqualStrings("System Firmware", list.items[0].name);
+    try testing.expectEqualStrings("0.1.48", list.items[0].version);
+    try testing.expectEqualStrings("uefi_capsule", list.items[0].plugin);
+    // Falls back to the id when the device has no name.
+    try testing.expectEqualStrings("dock", list.items[1].name);
+    try testing.expectEqualStrings("USB-C dock", list.items[1].summary);
+    try testing.expectError(error.InvalidFwupdOutput, parseDevices(testing.allocator, "[]"));
+}
+
+test "getDevices treats the nothing-to-do status as no devices" {
+    var script = ScriptedRunner.init(&.{.{ .exit_code = 2 }});
+    defer script.deinit();
+    var client = testClient(&script);
+    defer client.deinit();
+    var list = try client.getDevices();
+    defer list.deinit();
+    try testing.expectEqual(@as(usize, 0), list.items.len);
+    try testing.expectEqualStrings("get-devices", script.calls.items[0][1]);
 }
 
 test "parsePendingRestart reports the strongest pending requirement" {

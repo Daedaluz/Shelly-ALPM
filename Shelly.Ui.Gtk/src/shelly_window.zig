@@ -21,6 +21,7 @@ const aur_icon_name: [:0]const u8 = if (features.builtWithAtollOnly) "atoll-shar
 const aur_title: [:0]const u8 = features.aur_source_name;
 const ShellySearchPage = if (features.builtWithShellySearch) @import("pages/search_page.zig").ShellySearchPage else void;
 const UpdatePage = @import("pages/update_page.zig").UpdatePage;
+const FirmwarePage = @import("pages/firmware_page.zig").FirmwarePage;
 const RecommendPage = if (features.builtWithRecommend) @import("pages/recommend_page.zig").RecommendPage else void;
 const WelcomePage = @import("pages/welcome.zig").WelcomePage;
 const SupportPage = @import("pages/support.zig");
@@ -133,6 +134,7 @@ pub const ShellyWindow = extern struct {
         setNavEnabled(self, "aur", cfg.AurEnabled);
         setNavEnabled(self, "flatpak", cfg.FlatPackEnabled);
         setNavEnabled(self, "appimage", cfg.AppImageEnabled);
+        setNavEnabled(self, "firmware", cfg.FirmwareEnabled);
         setNavEnabled(self, "search", cfg.ShellySearchEnabled);
 
         self.changeNav(cfg.NavMode);
@@ -352,6 +354,7 @@ pub const ShellyWindow = extern struct {
         if (features.builtWithAur) add_nav_button(self, items, stack, true, "aur", aur_icon_name, translations._(aur_title));
         if (features.builtWithFlatpak) add_nav_button(self, items, stack, true, "flatpak", FlatpakPage.icon_name, translations._(FlatpakPage.title));
         if (features.builtWithAppImage) add_nav_button(self, items, stack, true, "appimage", AppImagePage.icon_name, translations._(AppImagePage.title));
+        add_nav_button(self, items, stack, true, "firmware", FirmwarePage.icon_name, translations._(FirmwarePage.title));
         if (features.builtWithShellySearch) add_nav_button(self, items, stack, true, "search", ShellySearchPage.icon_name, translations._(ShellySearchPage.title));
         add_nav_button(self, items, stack, true, "update", UpdatePage.icon_name, translations._(UpdatePage.title));
 
@@ -404,6 +407,7 @@ pub const ShellyWindow = extern struct {
         if (features.builtWithAur) add_nav_button(self, items, stack, false, "aur", aur_icon_name, translations._(aur_title));
         if (features.builtWithFlatpak) add_nav_button(self, items, stack, false, "flatpak", FlatpakPage.icon_name, translations._(FlatpakPage.title));
         if (features.builtWithAppImage) add_nav_button(self, items, stack, false, "appimage", AppImagePage.icon_name, translations._(AppImagePage.title));
+        add_nav_button(self, items, stack, false, "firmware", FirmwarePage.icon_name, translations._(FirmwarePage.title));
         if (features.builtWithShellySearch) add_nav_button(self, items, stack, false, "search", ShellySearchPage.icon_name, translations._(ShellySearchPage.title));
         add_nav_button(self, items, stack, false, "update", UpdatePage.icon_name, translations._(UpdatePage.title));
 
@@ -650,6 +654,10 @@ pub const ShellyWindow = extern struct {
             const ss_page = gtk.Stack.addTitled(stack, ss.as(gtk.Widget), "search", translations._(ShellySearchPage.title));
             gtk.StackPage.setIconName(ss_page, ShellySearchPage.icon_name);
         }
+
+        const fw = FirmwarePage.new();
+        const fw_page = gtk.Stack.addTitled(stack, fw.as(gtk.Widget), "firmware", translations._(FirmwarePage.title));
+        gtk.StackPage.setIconName(fw_page, FirmwarePage.icon_name);
 
         const up = UpdatePage.new();
         const up_page = gtk.Stack.addTitled(stack, up.as(gtk.Widget), "update", translations._("Update"));

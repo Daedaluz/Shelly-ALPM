@@ -8,6 +8,7 @@ const AppstreamApp = @import("../models/flatpak.zig").AppstreamApp;
 const FlatpakSearchResponse = @import("../models/flatpak.zig").FlatpakSearchResponse;
 const CheckUpdates = @import("../models/sync.zig").CheckUpdates;
 const FirmwareUpdate = @import("../models/sync.zig").FirmwareUpdate;
+const FirmwareDevice = @import("../models/sync.zig").FirmwareDevice;
 const AppImage = @import("../models/appimage.zig").AppImage;
 const AppImageUpdate = @import("../models/appimage.zig").AppImageUpdate;
 const JsonPackFrame = @import("../helpers/ui_decode.zig").JsonPackFrame;
@@ -358,6 +359,33 @@ pub const ShellyCli = struct {
             });
         }
         return error.NoDataFrame;
+    }
+
+    /// Devices fwupd can update, each with its available update if any.
+    pub fn list_firmware_devices(self: ShellyCli) !std.json.Parsed([]FirmwareDevice) {
+        const result = try self.run(&.{ "list", "firmware" });
+        defer self.allocator.free(result.stdout);
+        defer self.allocator.free(result.stderr);
+
+        var it = JsonPackFrame.frames(result.stdout);
+        while (it.next()) |payload| {
+            const json = JsonPackFrame.decodeBase64(self.allocator, payload) catch continue;
+            defer self.allocator.free(json);
+            if (std.mem.indexOf(u8, json, "\"$kind\"") != null) continue;
+            return std.json.parseFromSlice([]FirmwareDevice, self.allocator, json, .{
+                .ignore_unknown_fields = true,
+                .allocate = .alloc_always,
+            });
+        }
+        return error.NoDataFrame;
+    }
+
+    /// Downloads current firmware metadata. Failures (offline, for example)
+    /// are not fatal: cached metadata still describes the devices.
+    pub fn refresh_firmware_metadata(self: ShellyCli) void {
+        const result = self.run(&.{ "list-updates", "firmware", "--refresh" }) catch return;
+        self.allocator.free(result.stdout);
+        self.allocator.free(result.stderr);
     }
 
     pub const PkgbuildFetchMode = enum { preview, atoll_preview, atoll_scan };

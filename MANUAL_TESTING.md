@@ -61,6 +61,8 @@ tests.
 - [ ] `shelly upgrade firmware --ui-mode` without `--no-confirm` refuses to flash.
 - [ ] In the UI, turning on Settings → Enable Firmware Updates (fwupd) offers to install fwupd when it is missing.
 - [ ] With it on, Updates shows a Firmware section only when fwupd reports updates; Upgrade never includes firmware.
+- [ ] The Firmware sidebar page lists the same devices as `shelly -Lw`; it appears and disappears with the setting.
+- [ ] On Updates, the Firmware chip shows the update count and hides/shows the Firmware section.
 - [ ] Update Firmware → Cancel does nothing; Update Firmware → confirm installs the listed devices and the section disappears afterwards.
 
 ## UI Testing (Shelly-UI)

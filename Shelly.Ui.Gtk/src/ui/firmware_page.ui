@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface domain="shelly-ui">
+  <requires lib="gtk" version="4.0"/>
+  <template class="ShellyFirmwarePage" parent="GtkBox">
+    <property name="focusable">true</property>
+    <property name="focus-on-click">false</property>
+    <property name="accessible-role">group</property>
+    <accessibility>
+      <property name="label" translatable="yes">Firmware</property>
+    </accessibility>
+    <property name="orientation">vertical</property>
+    <property name="hexpand">true</property>
+    <property name="vexpand">true</property>
+    <property name="spacing">14</property>
+    <property name="margin-top">20</property>
+    <property name="margin-bottom">20</property>
+    <property name="margin-start">20</property>
+    <property name="margin-end">20</property>
+    <child>
+      <object class="GtkBox">
+        <property name="spacing">12</property>
+        <child>
+          <object class="GtkBox">
+            <property name="orientation">vertical</property>
+            <property name="hexpand">true</property>
+            <child>
+              <object class="GtkLabel">
+                <property name="label" translatable="yes">Firmware</property>
+                <property name="xalign">0</property>
+                <property name="accessible-role">heading</property>
+                <accessibility>
+                  <property name="level">2</property>
+                </accessibility>
+                <style>
+                  <class name="title-2"/>
+                </style>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel" id="summary_label">
+                <property name="label" translatable="yes">Devices managed by fwupd</property>
+                <property name="xalign">0</property>
+                <style>
+                  <class name="dim-label"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="refresh_button">
+            <property name="valign">center</property>
+            <property name="tooltip-text" translatable="yes">Download current firmware information and check again</property>
+            <signal name="clicked" handler="refresh_firmware" swapped="true"/>
+            <child>
+              <object class="GtkBox">
+                <property name="spacing">6</property>
+                <child>
+                  <object class="GtkImage">
+                    <property name="accessible-role">presentation</property>
+                    <property name="icon-name">view-refresh-symbolic</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkLabel">
+                    <property name="label" translatable="yes">Check Again</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="update_button">
+            <property name="valign">center</property>
+            <property name="sensitive">false</property>
+            <property name="tooltip-text" translatable="yes">Install the available firmware updates</property>
+            <signal name="clicked" handler="update_firmware" swapped="true"/>
+            <child>
+              <object class="GtkBox">
+                <property name="spacing">6</property>
+                <child>
+                  <object class="GtkImage">
+                    <property name="accessible-role">presentation</property>
+                    <property name="icon-name">software-update-available-symbolic</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkLabel">
+                    <property name="label" translatable="yes">Update Firmware</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="GtkStack" id="stack">
+        <property name="vexpand">true</property>
+        <property name="transition-type">crossfade</property>
+        <child>
+          <object class="GtkBox" id="loading_page">
+            <property name="orientation">vertical</property>
+            <property name="spacing">12</property>
+            <property name="halign">center</property>
+            <property name="valign">center</property>
+            <child>
+              <object class="GtkSpinner" id="loading_spinner">
+                <property name="width-request">32</property>
+                <property name="height-request">32</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel">
+                <property name="label" translatable="yes">Checking firmware…</property>
+                <style><class name="dim-label"/></style>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkScrolledWindow" id="list_page">
+            <property name="vexpand">true</property>
+            <property name="hscrollbar-policy">never</property>
+            <child>
+              <object class="GtkListBox" id="device_list">
+                <property name="selection-mode">none</property>
+                <property name="valign">start</property>
+                <property name="margin-start">1</property>
+                <property name="margin-end">1</property>
+                <property name="margin-top">1</property>
+                <property name="margin-bottom">8</property>
+                <accessibility>
+                  <property name="label" translatable="yes">Firmware devices</property>
+                </accessibility>
+                <style><class name="boxed-list"/></style>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkBox" id="empty_page">
+            <property name="orientation">vertical</property>
+            <property name="spacing">10</property>
+            <property name="halign">center</property>
+            <property name="valign">center</property>
+            <child>
+              <object class="GtkImage">
+                <property name="accessible-role">presentation</property>
+                <property name="icon-name">firmware-symbolic</property>
+                <property name="pixel-size">48</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel">
+                <property name="label" translatable="yes">fwupd reports no devices that can be updated</property>
+                <property name="wrap">true</property>
+                <property name="justify">center</property>
+                <style><class name="title-3"/></style>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="GtkBox" id="error_page">
+            <property name="orientation">vertical</property>
+            <property name="spacing">10</property>
+            <property name="halign">center</property>
+            <property name="valign">center</property>
+            <child>
+              <object class="GtkImage">
+                <property name="accessible-role">presentation</property>
+                <property name="icon-name">dialog-error-symbolic</property>
+                <property name="pixel-size">48</property>
+              </object>
+            </child>
+            <child>
+              <object class="GtkLabel">
+                <property name="label" translatable="yes">Could not read firmware devices from fwupd. Check that fwupd is installed; `shelly list firmware` in a terminal shows the reason.</property>
+                <property name="wrap">true</property>
+                <property name="justify">center</property>
+                <property name="max-width-chars">60</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </template>
+</interface>
